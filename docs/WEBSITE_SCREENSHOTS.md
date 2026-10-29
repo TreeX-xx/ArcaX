@@ -26,3 +26,14 @@ Suggested website order:
 10. Track downloads
 11. Tune settings and updates
 12. Manage saved profiles
+
+## README screenshots
+
+The screenshots used by `README.md` live in `docs/screenshots/`. They are generated from the static build against the same mocked desktop backend the smoke tests use:
+
+```bash
+pnpm build
+pnpm screenshots:readme
+```
+
+The capture script is `scripts/capture-readme-screenshots.mjs`. It writes `all-buckets.png`, `object-browser.png`, `uploads.png` and `settings.png` at 2880 x 1800.

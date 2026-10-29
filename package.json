@@ -24,6 +24,7 @@
     "dev": "next dev -p 3001",
     "brand": "node scripts/generate-brand.js",
     "installer-art": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-installer-art.ps1",
+    "screenshots:readme": "node scripts/capture-readme-screenshots.mjs",
     "prebuild": "node scripts/copy-monaco.js",
     "build": "next build",
     "start": "next start",

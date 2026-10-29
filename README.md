@@ -1,12 +1,48 @@
-# ArcaX
+<p align="center">
+  <img src="public/logo.png" width="132" alt="ArcaX logo">
+</p>
 
-[Source](https://github.com/TreeX-xx/ArcaX) · [Issues](https://github.com/TreeX-xx/ArcaX/issues)
+<h1 align="center">ArcaX</h1>
 
-**ArcaX** is a fast, focused desktop client for Amazon S3 and S3-compatible object storage. It pairs a Rust core with a Tauri shell and a Next.js frontend: prefix-aware navigation, a virtualized object table, local caching, previews, and transfer controls for large buckets.
+<p align="center">
+  <strong>A fast, focused desktop client for Amazon S3 and S3-compatible object storage.</strong><br>
+  Rust core · Tauri shell · Next.js interface
+</p>
+
+<p align="center">
+  <a href="https://github.com/TreeX-xx/ArcaX/releases/latest"><img src="https://img.shields.io/github/v/release/TreeX-xx/ArcaX?label=download&sort=semver" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/TreeX-xx/ArcaX" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20x64-0078D4" alt="Platform: Windows x64">
+  <img src="https://img.shields.io/badge/built%20with-Rust%20%C2%B7%20Tauri%20%C2%B7%20Next.js-1f6feb" alt="Built with Rust, Tauri and Next.js">
+</p>
+
+<p align="center">
+  <a href="https://github.com/TreeX-xx/ArcaX/releases/latest"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/TreeX-xx/ArcaX/issues">Issues</a> ·
+  <a href="#documentation">Documentation</a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/object-browser.png" width="100%" alt="ArcaX object browser showing folders and files in an S3 bucket">
+</p>
+
+**ArcaX** pairs a Rust core with a Tauri shell and a Next.js frontend: prefix-aware navigation, a virtualized object table, local caching, previews, and transfer controls for large buckets. Credentials stay in the OS keychain, and every S3 request is made by the local backend.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/all-buckets.png" width="49%" alt="All Buckets view listing S3 buckets with region, creation date and total size">
+  <img src="docs/screenshots/uploads.png" width="49%" alt="Uploads page showing pending, uploading and completed transfer jobs">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="78%" alt="Settings page with language, theme, default region, transfer concurrency and bandwidth limits">
+</p>
 
 ## What is different in ArcaX
 
 - **New brand and theme** — ArcaX naming, app icon, and a graphite workspace, collapsible sidebar, integrated window controls, and a monochrome X mark.
+- **Bilingual interface** — English and Simplified Chinese can be switched from Settings or the top bar, and follow the OS language on first run.
 - **Updated column** — the object table shows a local `YYYY-MM-DD HH:mm` timestamp for files and, where S3 exposes it, for folders too.
 - **Automatic updates not configured** — update manually from ArcaX GitHub Releases.
 
@@ -37,6 +73,18 @@ Folder timestamps are derived from the newest direct child object, with a fallba
 - Multiple S3 profiles with secure credential storage in the OS keychain.
 - AWS profile discovery and SSO login support.
 
+## Install
+
+Download the latest Windows x64 installers from [GitHub Releases](https://github.com/TreeX-xx/ArcaX/releases/latest):
+
+| File | Description |
+| --- | --- |
+| `ArcaX_<version>_x64_en-US.msi` | WiX MSI installer |
+| `ArcaX_<version>_x64-setup.exe` | NSIS installer with English/Chinese language selection |
+| `SHA256SUMS.txt` | Checksums for both installers |
+
+The installers are unsigned, so Windows SmartScreen may warn. They use the WebView2 download bootstrapper: internet access is only needed when WebView2 is not already present. macOS and Linux builds are not published; run `pnpm tauri build` on those systems to produce them locally.
+
 ## Requirements
 
 - Node.js 22 or newer
@@ -55,10 +103,6 @@ pnpm tauri dev    # starts Next.js on port 3001 and the desktop shell
 
 For frontend-only development, run `pnpm dev` instead. Do not start both commands on port 3001.
 
-## Distribution
-
-ArcaX is built locally. Run `pnpm tauri build` for installers, then publish the resulting artifacts to [GitHub Releases](https://github.com/TreeX-xx/ArcaX/releases). The manually triggered **Desktop packages** GitHub Actions workflow can still produce downloadable build artifacts but does not publish releases. Windows installers are unsigned and macOS builds use ad-hoc signing; automatic updates, crates.io and winget publication are not configured. See [repository and release setup](docs/REPOSITORY.md).
-
 ## Build and test
 
 ```bash
@@ -69,6 +113,17 @@ pnpm test:rust    # cargo test --manifest-path src-tauri/Cargo.toml
 pnpm test:smoke   # build + Playwright
 ```
 
+README screenshots are generated from the static build with a mocked desktop backend:
+
+```bash
+pnpm build
+pnpm screenshots:readme
+```
+
+## Distribution
+
+ArcaX is built locally. Run `pnpm tauri build` for installers, then publish the resulting artifacts to [GitHub Releases](https://github.com/TreeX-xx/ArcaX/releases). The manually triggered **Desktop packages** GitHub Actions workflow can still produce downloadable build artifacts but does not publish releases. See [repository and release setup](docs/REPOSITORY.md) and the [release process](.agents/notes/release-process.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
@@ -77,6 +132,7 @@ MIT. See [LICENSE](LICENSE).
 
 - [Repository and release setup](docs/REPOSITORY.md)
 - [Design notes](DESIGN.md)
+- [Website screenshots](docs/WEBSITE_SCREENSHOTS.md)
 - [Folder sync](docs/FOLDER_SYNC.md)
 - [Cross-profile copy](docs/CROSS_PROFILE_COPY.md)
 - [Scheduled jobs](docs/SCHEDULED_JOBS.md)
