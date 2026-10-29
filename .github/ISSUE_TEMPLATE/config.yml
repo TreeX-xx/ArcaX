@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Support and Troubleshooting
+    url: https://github.com/TreeX-xx/ArcaX/blob/main/SUPPORT.md
+    about: Read support guidance before opening an issue.
+  - name: macOS Install Troubleshooting
+    url: https://github.com/TreeX-xx/ArcaX/blob/main/docs/MACOS_TROUBLESHOOTING.md
+    about: Fix Gatekeeper and install issues on macOS.

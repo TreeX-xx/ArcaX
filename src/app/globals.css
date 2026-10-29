@@ -1,0 +1,43 @@
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Allow text selection for copy/paste */
+* {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* But disable selection on buttons and interactive elements */
+button, [role="button"], input, textarea, select {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(140, 140, 140, 0.3);
+}
+
+.styled-checkbox:focus-within {
+  outline: 2px solid #909090;
+  outline-offset: 2px;
+}
+
+button:focus-visible, [role="button"]:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+[data-tauri-drag-region] { user-select: none; }
