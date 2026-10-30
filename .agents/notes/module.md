@@ -5,7 +5,7 @@
   "kind": "module",
   "lifecycle": "accepted",
   "created": "2026-10-28",
-  "updated": "2026-10-28T09:22:35Z",
+  "updated": "2026-10-30T03:23:23Z",
   "role": "project",
   "moduleState": "implemented"
 }
@@ -23,7 +23,12 @@ The frontend is a statically exported Next.js app loaded by the Tauri shell. Zus
 
 Interface language is a persisted user setting. See [Internationalization](i18n.md) for the language model, the translation workflow and the remaining backend gaps.
 
+ZIP archive browsing uses a synchronous `Read + Seek` range reader in `src-tauri/src/archive/` and is surfaced by `ArchivePreviewDialog`; see [Archive browsing](archive-browsing.md) for the data path, limits and planned TAR/gzip work.
+
 ## Related documents
 
+- [Product direction](product-direction.md) — exploratory feature directions and a suggested sequence beyond the 0.0.2 baseline.
+- [Archive browsing](archive-browsing.md) — implemented ZIP range browsing and the planned TAR/gzip work.
+- [File drag and drop](file-drag-and-drop.md) — planned OS drop upload and native drag-out design.
 - [Internationalization](i18n.md) — English/Chinese switching, message catalog and covered surfaces.
 - [Release and automatic updates](release-process.md) — local build, GitHub Releases and the deferred updater direction.

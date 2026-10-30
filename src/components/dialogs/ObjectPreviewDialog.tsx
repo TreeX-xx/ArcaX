@@ -18,6 +18,7 @@ import Editor from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import ImagePreviewViewer from './ImagePreviewViewer';
+import ArchivePreviewDialog from './ArchivePreviewDialog';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -87,6 +88,7 @@ export default function ObjectPreviewDialog({
   const isAudioFile = objectKind === 'audio';
   const isVideoFile = objectKind === 'video';
   const isPdfFile = objectKind === 'pdf';
+  const isArchiveFile = objectKind === 'archive';
   const isText = objectKind === 'text';
   
   // Content is authoritative across undo, save, and controlled discard resets.
@@ -145,6 +147,10 @@ export default function ObjectPreviewDialog({
         if (cancelled || requestId !== loadRequestIdRef.current) return;
 
         const resolvedKind = getObjectKind(filename, resolvedContentType);
+        if (resolvedKind === 'archive') {
+          setIsLoading(false);
+          return;
+        }
         if (resolvedKind === 'text' && resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
           setError(tGlobal('File is too large to preview ({size} MB). Increase the {limit} MB text preview limit in Settings or download it.', { size: (resolvedObjectSize / 1024 / 1024).toFixed(2), limit: maxTextPreviewSizeMb }));
           return;
@@ -268,6 +274,17 @@ export default function ObjectPreviewDialog({
   useEffect(() => {
     if (open && !isImageFile && !startInEditMode) previewRoot.current?.focus({ preventScroll: true });
   }, [open, objectKey, isImageFile, startInEditMode]);
+
+  if (isArchiveFile) {
+    return <ArchivePreviewDialog
+      open={open}
+      onClose={handleClose}
+      bucketName={bucketName}
+      bucketRegion={bucketRegion}
+      objectKey={objectKey}
+      objectSize={objectSize}
+    />;
+  }
 
   if (isImageFile) {
     const index = navigation?.index ?? imageSequence.indexOf(objectKey);

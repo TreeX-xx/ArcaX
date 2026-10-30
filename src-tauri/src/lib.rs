@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod commands;
 pub mod credentials;
 pub mod error;
@@ -5,7 +6,8 @@ pub mod s3;
 pub mod transfer;
 
 use commands::{
-    bucket_management, buckets, objects, operations, profiles, transfer as transfer_cmd,
+    archive as archive_commands, bucket_management, buckets, objects, operations, profiles,
+    transfer as transfer_cmd,
 };
 use s3::S3ClientManager;
 use serde::Serialize;
@@ -316,6 +318,10 @@ pub fn run() {
             objects::get_presigned_url,
             objects::get_object_content,
             objects::put_object_content,
+            // Archive commands
+            archive_commands::list_archive_entries,
+            archive_commands::read_archive_entry,
+            archive_commands::extract_archive_entry,
             // File operations
             operations::put_object,
             operations::get_object,

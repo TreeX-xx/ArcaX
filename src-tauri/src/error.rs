@@ -34,6 +34,9 @@ pub enum AppError {
 
     #[error("Invalid content: {0}")]
     InvalidContent(String),
+
+    #[error("Archive error: {0}")]
+    ArchiveError(String),
 }
 
 // Tauri forwards command errors to JavaScript through Serde. The default enum

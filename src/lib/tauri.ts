@@ -381,6 +381,92 @@ export const objectApi = {
   },
 };
 
+export interface ArchiveEntry {
+  id: number;
+  path: string;
+  raw_path: string;
+  is_dir: boolean;
+  size: number;
+  compressed_size: number;
+  modified: string | null;
+  method: string;
+  encrypted: boolean;
+  is_symlink: boolean;
+  unsafe_path: boolean;
+}
+
+export interface ArchiveListing {
+  format: string;
+  entry_count: number;
+  total_uncompressed: number;
+  truncated: boolean;
+  entries: ArchiveEntry[];
+}
+
+export interface ArchiveEntryContent {
+  path: string;
+  size: number;
+  content_type: string | null;
+  is_text: boolean;
+  text: string | null;
+  data_base64: string | null;
+}
+
+export interface ArchiveExtractResult {
+  path: string;
+  bytes_written: number;
+}
+
+export const archiveApi = {
+  async list(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<ArchiveListing> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<ArchiveListing>('list_archive_entries', { bucketName, bucketRegion, key, expectedProfileId });
+  },
+
+  async readEntry(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    entryId: number,
+    maxBytes: number,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<ArchiveEntryContent> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<ArchiveEntryContent>('read_archive_entry', {
+      bucketName,
+      bucketRegion,
+      key,
+      entryId,
+      maxBytes,
+      expectedProfileId,
+    });
+  },
+
+  async extractEntry(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    entryId: number,
+    destinationPath: string,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<ArchiveExtractResult> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<ArchiveExtractResult>('extract_archive_entry', {
+      bucketName,
+      bucketRegion,
+      key,
+      entryId,
+      destinationPath,
+      expectedProfileId,
+    });
+  },
+};
+
 export const operationsApi = {
   async copyBetweenProfiles(items: import('@/store/clipboardStore').ClipboardItem[], destinationBucket: string, destinationRegion: string, destinationPrefix: string, expectedProfileId: string): Promise<number> {
     if (expectedProfileId !== useProfileStore.getState().activeProfileId) {

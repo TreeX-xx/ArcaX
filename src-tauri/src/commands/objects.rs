@@ -900,6 +900,48 @@ pub async fn search_objects(
     })
 }
 
+pub(super) async fn presigned_get_url(
+    active_profile: &crate::credentials::Profile,
+    s3_state: &S3State,
+    bucket_name: &str,
+    bucket_region: Option<String>,
+    key: &str,
+    expires_in: u64,
+) -> Result<String> {
+    use aws_sdk_s3::presigning::PresigningConfig;
+    use std::time::Duration;
+
+    let bucket_region = {
+        let s3_manager = s3_state.read().await;
+        s3_manager.get_bucket_region(active_profile, bucket_name)
+    }
+    .or(bucket_region);
+
+    let client = {
+        let mut s3_manager = s3_state.write().await;
+        if let Some(ref region) = bucket_region {
+            s3_manager
+                .get_client_for_region(active_profile, region)
+                .await?
+                .clone()
+        } else {
+            s3_manager.get_client(active_profile).await?.clone()
+        }
+    };
+
+    let config = PresigningConfig::expires_in(Duration::from_secs(expires_in))
+        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+    let request = client
+        .get_object()
+        .bucket(bucket_name)
+        .key(key)
+        .response_content_disposition("inline")
+        .presigned(config)
+        .await
+        .map_err(|e| crate::error::AppError::S3Error(e.to_string()))?;
+    Ok(request.uri().to_string())
+}
+
 #[tauri::command]
 pub async fn get_presigned_url(
     bucket_name: String,

@@ -8,9 +8,9 @@ const options = () => ({ objects: [object('a.svg')], field: 'name' as const, dir
 
 test('preview ordering skips folders and binary files, deduplicates keys, and follows table sorts', () => {
   const objects = [object('z.svg', 2), object('folder/'), object('b.zip'), object('a.txt', 3), object('z.svg', 2)];
-  expect(previewObjects(objects, 'name', 'asc').map(o => o.key)).toEqual(['a.txt', 'z.svg']);
-  expect(previewObjects(objects, 'size', 'asc').map(o => o.key)).toEqual(['z.svg', 'a.txt']);
-  expect(previewObjects(objects, 'name', 'desc').map(o => o.key)).toEqual(['z.svg', 'a.txt']);
+  expect(previewObjects(objects, 'name', 'asc').map(o => o.key)).toEqual(['a.txt', 'b.zip', 'z.svg']);
+  expect(previewObjects(objects, 'size', 'asc').map(o => o.key)).toEqual(['b.zip', 'z.svg', 'a.txt']);
+  expect(previewObjects(objects, 'name', 'desc').map(o => o.key)).toEqual(['z.svg', 'b.zip', 'a.txt']);
 });
 test('navigation passes empty pages and serializes repeated requests', async () => {
   const opts = options(); const pending = Promise.withResolvers<ListObjectsResult>();

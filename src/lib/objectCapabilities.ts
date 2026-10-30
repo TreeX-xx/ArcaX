@@ -1,8 +1,9 @@
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico', 'bmp', 'tiff']);
 const VIDEO_EXTENSIONS = new Set(['mp4', 'webm', 'ogg', 'mov', 'mkv', 'avi']);
 const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'flac', 'aac', 'm4a', 'opus', 'oga']);
+const ARCHIVE_EXTENSIONS = new Set(['zip']);
 const BINARY_EXTENSIONS = new Set([
-  'zip', 'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',
+  'tar', 'gz', 'tgz', 'bz2', 'xz', '7z', 'rar',
   'woff', 'woff2', 'ttf', 'otf', 'eot',
   'exe', 'dll', 'so', 'dylib', 'bin', 'iso',
   'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
@@ -33,7 +34,7 @@ const TEXT_CONTENT_TYPES = new Set([
   'application/x-empty',
 ]);
 
-export type ObjectKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'binary';
+export type ObjectKind = 'image' | 'audio' | 'video' | 'pdf' | 'text' | 'archive' | 'binary';
 
 export const getObjectName = (objectKey: string): string => objectKey.split('/').pop() || objectKey;
 
@@ -73,6 +74,7 @@ const kindFromName = (name: string): ObjectKind => {
   if (AUDIO_EXTENSIONS.has(extension)) return 'audio';
   if (VIDEO_EXTENSIONS.has(extension)) return 'video';
   if (extension === 'pdf') return 'pdf';
+  if (ARCHIVE_EXTENSIONS.has(extension)) return 'archive';
   if (BINARY_EXTENSIONS.has(extension)) return 'binary';
 
   // Default ambiguous names to text. Content type, when present, remains authoritative.
@@ -81,6 +83,7 @@ const kindFromName = (name: string): ObjectKind => {
 };
 
 export const getObjectKind = (name: string, contentType?: string | null): ObjectKind => {
+  if (ARCHIVE_EXTENSIONS.has(getObjectExtension(name))) return 'archive';
   return kindFromContentType(contentType) ?? kindFromName(name);
 };
 
