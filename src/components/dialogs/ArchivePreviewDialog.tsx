@@ -41,6 +41,7 @@ import { buildArchiveRows, type ArchiveRow } from '@/lib/archiveView';
 import { formatSize } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { toast } from '@/store/toastStore';
+import { formatTextPreview } from '@/lib/textPreview';
 
 const PAGE_SIZE = 100;
 const IMAGE_PREVIEW_BYTES = 10 * 1024 * 1024;
@@ -80,6 +81,12 @@ export default function ArchivePreviewDialog({
   const [extracting, setExtracting] = useState(false);
 
   const filename = objectKey.split('/').pop() || objectKey;
+  const previewText = useMemo(
+    () => entryContent?.is_text
+      ? formatTextPreview(entryContent.text ?? '', entryContent.path, entryContent.content_type)
+      : '',
+    [entryContent],
+  );
 
   useEffect(() => {
     if (!open || !objectKey) return;
@@ -484,7 +491,7 @@ export default function ArchivePreviewDialog({
                   wordBreak: 'break-word',
                 }}
               >
-                {entryContent.text}
+                {previewText}
               </Box>
             )}
             {!entryLoading && entryContent?.data_base64 && (

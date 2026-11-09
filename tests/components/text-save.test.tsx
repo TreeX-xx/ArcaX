@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import { objectApi } from '@/lib/tauri';
+import { copyToClipboard, objectApi } from '@/lib/tauri';
 
 vi.mock('@/lib/tauri', () => ({ objectApi: { getObjectMetadata: vi.fn(), getObjectContent: vi.fn(), putObjectContent: vi.fn() }, copyToClipboard: vi.fn() }));
 vi.mock('@monaco-editor/react', () => ({ default: ({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: { readOnly: boolean } }) => <textarea aria-label="File content" value={value} readOnly={options.readOnly} onChange={event => onChange(event.target.value)} /> }));
@@ -42,5 +42,22 @@ test('missing ETags allow viewing but prevent saving', async () => {
   const editor = await openEditor();
   fireEvent.change(editor, { target: { value: 'edit' } });
   expect((screen.getByRole('button', { name: 'Save Changes' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(objectApi.putObjectContent).not.toHaveBeenCalled();
+});
+
+test('JSON previews are formatted for viewing and copying without changing the edit baseline', async () => {
+  const original = '{"id":9007199254740993,"items":[1,2]}';
+  const formatted = '{\n  "id": 9007199254740993,\n  "items": [\n    1,\n    2\n  ]\n}';
+  vi.mocked(objectApi.getObjectContent).mockResolvedValueOnce({ content: original, e_tag: 'body-etag', profile_id: 'profile-a' });
+  render(<ObjectPreviewDialog open onClose={vi.fn()} bucketName="bucket" bucketRegion="region" objectKey="data.json" />);
+  const editor = await screen.findByRole('textbox', { name: 'File content' });
+  expect((editor as HTMLTextAreaElement).value).toBe(formatted);
+  fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+  await waitFor(() => expect(copyToClipboard).toHaveBeenCalledWith(formatted));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit File' }));
+  expect((screen.getByRole('textbox', { name: 'File content' }) as HTMLTextAreaElement).value).toBe(original);
+  expect((screen.getByRole('button', { name: 'Save Changes' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect((screen.getByRole('textbox', { name: 'File content' }) as HTMLTextAreaElement).value).toBe(formatted);
   expect(objectApi.putObjectContent).not.toHaveBeenCalled();
 });

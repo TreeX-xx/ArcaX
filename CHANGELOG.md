@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-11-09
+
+### Added
+- JSON text previews, including ZIP entries, are automatically formatted with two-space indentation, detected by filename or JSON content type. Formatting changes whitespace only and preserves numeric literals, escaped strings, key order and duplicate keys; invalid JSON is shown unchanged. Copy in preview mode uses the formatted text, while editing and saving start from the original text, so opening a preview never creates unsaved changes.
+
 ## [0.0.3] - 2026-10-30
 
 ### Added

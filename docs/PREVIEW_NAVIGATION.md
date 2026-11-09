@@ -20,6 +20,8 @@ Context identity guards prevent completed requests from navigating a closed prev
 
 ## Implementation and visual authority
 
+JSON text previews (including ZIP entries) automatically use two-space indentation and line breaks, detected by filename or JSON content type. Formatting changes whitespace only, preserving numeric literals, escaped strings, key order, and duplicate keys. Invalid JSON and other text remain unchanged. Copy in preview mode uses the displayed text; editing and saving use the original text or explicit edits, so opening a formatted preview does not create unsaved changes.
+
 The existing image viewer and BaseDialog remain authoritative. Preserve their light/dark theme, image zoom and pan, and compact rounded controls. Selection and navigation extend these surfaces; this feature does not establish a new visual design system.
 
 | Source | Responsibility |

@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import {
   Button,
   Box,
@@ -23,6 +23,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useI18n, tGlobal } from '@/lib/i18n';
+import { formatTextPreview } from '@/lib/textPreview';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -90,6 +91,10 @@ export default function ObjectPreviewDialog({
   const isPdfFile = objectKind === 'pdf';
   const isArchiveFile = objectKind === 'archive';
   const isText = objectKind === 'text';
+  const previewContent = useMemo(
+    () => formatTextPreview(content, filename, contentType),
+    [content, filename, contentType],
+  );
   
   // Content is authoritative across undo, save, and controlled discard resets.
   // Monaco assigns a new version even when restoring the original text.
@@ -245,7 +250,7 @@ export default function ObjectPreviewDialog({
 
   const handleCopyContent = async () => {
     try {
-      await copyToClipboard(isEditing ? editedContent : content);
+      await copyToClipboard(isEditing ? editedContent : previewContent);
       toast.info(t('Copied'), t('Content copied to clipboard'));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Failed to copy content'));
@@ -473,9 +478,10 @@ export default function ObjectPreviewDialog({
             {isText && (
                <Box sx={{ flex: 1, border: '1px solid', borderColor: 'divider', borderRadius: 0.5, overflow: 'hidden' }}>
                  <Editor 
+                    key={isEditing ? 'edit' : 'preview'}
                     height="100%"
-                    defaultLanguage={getEditorLanguage(filename, contentType)}
-                    value={editedContent}
+                    language={getEditorLanguage(filename, contentType)}
+                    value={isEditing ? editedContent : previewContent}
                     options={{ 
                         readOnly: !isEditing || isSaving,
                         minimap: { enabled: true },
@@ -487,7 +493,7 @@ export default function ObjectPreviewDialog({
                         padding: { top: 16, bottom: 16 }
                     }}
                     theme={theme.palette.mode === 'dark' ? 'vs-dark' : 'light'}
-                    onChange={(val) => setEditedContent(val || '')}
+                    onChange={(val) => { if (isEditing) setEditedContent(val || ''); }}
                     loading={<CircularProgress size={32} />}
                  />
                </Box>
