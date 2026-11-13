@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-11-13
+
+### Added
+- Opening preview on a SQLite database now shows its tables and a paged row view. Detection uses the `SQLite format 3` header when preview is opened the same way as for ZIP or text; there is no format picker. This covers extensionless names such as `toolDB` (NX CAM tool libraries) and ordinary `.db`, `.sqlite`, and `.sqlite3` names. The view is read-only (a temporary copy, with a 64 MB size cap). A SQLite database is never opened as text in the editor.
+
 ## [0.0.4] - 2026-11-09
 
 ### Added
