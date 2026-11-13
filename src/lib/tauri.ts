@@ -467,6 +467,88 @@ export const archiveApi = {
   },
 };
 
+export type SqliteProbeDecision = 'sqlite' | 'too_large' | 'fallback';
+
+export interface SqliteProbe {
+  decision: SqliteProbeDecision;
+  size: number;
+}
+
+export interface SqliteColumn {
+  name: string;
+  declared_type: string | null;
+}
+
+export interface SqliteCell {
+  kind: 'null' | 'integer' | 'real' | 'text' | 'blob' | string;
+  text: string;
+}
+
+export interface SqliteTableSummary {
+  name: string;
+  kind: string;
+  row_count: number | null;
+}
+
+export interface SqliteCatalog {
+  byte_size: number;
+  tables: SqliteTableSummary[];
+  truncated: boolean;
+}
+
+export interface SqliteTablePage {
+  name: string;
+  kind: string;
+  columns: SqliteColumn[];
+  rows: SqliteCell[][];
+  total_rows: number;
+  offset: number;
+  limit: number;
+}
+
+export const sqliteApi = {
+  async probe(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<SqliteProbe> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<SqliteProbe>('probe_sqlite_preview', { bucketName, bucketRegion, key, expectedProfileId });
+  },
+
+  async listTables(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<SqliteCatalog> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<SqliteCatalog>('list_sqlite_tables', { bucketName, bucketRegion, key, expectedProfileId });
+  },
+
+  async readTable(
+    bucketName: string,
+    bucketRegion: string | undefined,
+    key: string,
+    table: string,
+    offset: number,
+    limit: number,
+    expectedProfileId = useProfileStore.getState().activeProfileId
+  ): Promise<SqliteTablePage> {
+    if (!expectedProfileId) throw new Error(tGlobal('Select a profile first.'));
+    return invoke<SqliteTablePage>('read_sqlite_table', {
+      bucketName,
+      bucketRegion,
+      key,
+      table,
+      offset,
+      limit,
+      expectedProfileId,
+    });
+  },
+};
+
 export const operationsApi = {
   async copyBetweenProfiles(items: import('@/store/clipboardStore').ClipboardItem[], destinationBucket: string, destinationRegion: string, destinationPrefix: string, expectedProfileId: string): Promise<number> {
     if (expectedProfileId !== useProfileStore.getState().activeProfileId) {
