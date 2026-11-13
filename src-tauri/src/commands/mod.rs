@@ -6,6 +6,7 @@ pub mod jobs;
 pub mod objects;
 pub mod operations;
 pub mod profiles;
+pub mod sqlite;
 pub mod sync;
 pub mod transfer;
 pub mod urls;

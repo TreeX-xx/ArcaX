@@ -1,14 +1,19 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import ObjectPreviewDialog from '@/components/dialogs/ObjectPreviewDialog';
-import { copyToClipboard, objectApi } from '@/lib/tauri';
+import { copyToClipboard, objectApi, sqliteApi } from '@/lib/tauri';
 
-vi.mock('@/lib/tauri', () => ({ objectApi: { getObjectMetadata: vi.fn(), getObjectContent: vi.fn(), putObjectContent: vi.fn() }, copyToClipboard: vi.fn() }));
+vi.mock('@/lib/tauri', () => ({
+  objectApi: { getObjectMetadata: vi.fn(), getObjectContent: vi.fn(), putObjectContent: vi.fn() },
+  sqliteApi: { probe: vi.fn(), listTables: vi.fn(), readTable: vi.fn() },
+  copyToClipboard: vi.fn(),
+}));
 vi.mock('@monaco-editor/react', () => ({ default: ({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: { readOnly: boolean } }) => <textarea aria-label="File content" value={value} readOnly={options.readOnly} onChange={event => onChange(event.target.value)} /> }));
 
 beforeEach(() => {
   vi.mocked(objectApi.getObjectMetadata).mockResolvedValue({ key: 'file.txt', size: 3, content_type: 'text/plain', e_tag: 'head-etag', last_modified: null, storage_class: null, user_metadata: {} });
   vi.mocked(objectApi.getObjectContent).mockResolvedValue({ content: 'old', e_tag: 'body-etag', profile_id: 'profile-a' });
+  vi.mocked(sqliteApi.probe).mockResolvedValue({ decision: 'fallback', size: 3 });
   vi.mocked(objectApi.putObjectContent).mockResolvedValue('saved-etag');
 });
 

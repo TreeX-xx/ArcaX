@@ -108,6 +108,7 @@ export class DesktopBackend {
       case 'search_objects': return { objects: this.objects.filter(item => item.key.includes(String(args.query))), scanned_objects: this.objects.length, is_truncated: false };
       case 'get_object_metadata': return { key: args.key, size: this.content.length, content_type: String(args.key).endsWith('.wav') ? 'audio/wav' : String(args.key).endsWith('.svg') ? 'image/svg+xml' : this.contentType, e_tag: this.etag, last_modified: null, storage_class: null, user_metadata: {} };
       case 'get_object_content': return { content: this.content, e_tag: this.etag, profile_id: this.activeProfile };
+      case 'probe_sqlite_preview': return { decision: 'fallback', size: this.content.length };
       case 'put_object_content':
         if (this.conflict || args.expectedEtag !== this.etag) throw new Error('This object has changed since it was opened.');
         if (args.expectedProfileId !== this.activeProfile) throw new Error('The active profile changed.');

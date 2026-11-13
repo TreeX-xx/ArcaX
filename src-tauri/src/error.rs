@@ -37,6 +37,9 @@ pub enum AppError {
 
     #[error("Archive error: {0}")]
     ArchiveError(String),
+
+    #[error("SQLite error: {0}")]
+    SqliteError(String),
 }
 
 // Tauri forwards command errors to JavaScript through Serde. The default enum
