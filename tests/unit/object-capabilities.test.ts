@@ -13,6 +13,10 @@ test.each([
   ['font.woff2', 'application/octet-stream', 'binary', false],
   ['.env', null, 'text', true],
   ['README', 'application/octet-stream', 'text', true],
+  ['toolDB', null, 'text', true],
+  ['library.db', 'application/x-sqlite3', 'text', true],
+  ['library.sqlite', null, 'text', true],
+  ['library.sqlite3', 'application/octet-stream', 'text', true],
   ['photo.PNG', null, 'image', false],
   ['sound.MP3', null, 'audio', false],
 ] as const)('preview and edit actions match %s with content type %s', (name, contentType, kind, editable) => {

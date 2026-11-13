@@ -13,17 +13,20 @@ import {
   Save as SaveIcon,
   ContentCopy as CopyIcon,
 } from '@mui/icons-material';
-import { copyToClipboard, objectApi } from '@/lib/tauri';
+import { copyToClipboard, objectApi, sqliteApi } from '@/lib/tauri';
 import Editor from '@monaco-editor/react';
 import { toast } from '@/store/toastStore';
 import { BaseDialog } from '../common/BaseDialog';
 import ImagePreviewViewer from './ImagePreviewViewer';
 import ArchivePreviewDialog from './ArchivePreviewDialog';
+import SqlitePreviewDialog from './SqlitePreviewDialog';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { getEditorLanguage, getObjectExtension, getObjectKind, getObjectName } from '@/lib/objectCapabilities';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useI18n, tGlobal } from '@/lib/i18n';
 import { formatTextPreview } from '@/lib/textPreview';
+import { routeTextPreview } from '@/lib/sqlitePreview';
+import { formatSize } from '@/lib/utils';
 
 interface ObjectPreviewDialogProps {
   open: boolean;
@@ -70,6 +73,7 @@ export default function ObjectPreviewDialog({
   const [textIdentity, setTextIdentity] = useState<{ etag: string | null; profileId: string } | null>(null);
   const [reloadAttempt, setReloadAttempt] = useState(0);
   const [loadedObjectKey, setLoadedObjectKey] = useState('');
+  const [sqliteDecision, setSqliteDecision] = useState<'sqlite' | 'too-large' | 'text' | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [discardAction, setDiscardAction] = useState<'close' | 'cancel' | null>(null);
   const previewRoot = useRef<HTMLDivElement>(null);
@@ -107,6 +111,7 @@ export default function ObjectPreviewDialog({
 
     const loadContent = async () => {
       setLoadedObjectKey(objectKey);
+      setSqliteDecision(null);
       setIsLoading(true);
       setError(null);
       setContent('');
@@ -156,10 +161,6 @@ export default function ObjectPreviewDialog({
           setIsLoading(false);
           return;
         }
-        if (resolvedKind === 'text' && resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
-          setError(tGlobal('File is too large to preview ({size} MB). Increase the {limit} MB text preview limit in Settings or download it.', { size: (resolvedObjectSize / 1024 / 1024).toFixed(2), limit: maxTextPreviewSizeMb }));
-          return;
-        }
 
         if (resolvedKind === 'image' || resolvedKind === 'audio' || resolvedKind === 'video' || resolvedKind === 'pdf') {
           // Get presigned URL for preview
@@ -176,7 +177,25 @@ export default function ObjectPreviewDialog({
             setPresignedUrl(url);
           }
         } else if (resolvedKind === 'text') {
-          // Get text content
+          // Header magic decides SQLite before any text editor path, including
+          // extensionless names such as toolDB. A database is never handed to Monaco.
+          const probe = await sqliteApi.probe(bucketName, bucketRegion, objectKey);
+          if (cancelled || requestId !== loadRequestIdRef.current) return;
+          const route = routeTextPreview(probe.decision);
+          setSqliteDecision(route);
+          if (route === 'sqlite') {
+            return;
+          }
+          if (route === 'too-large') {
+            setError(tGlobal('This SQLite database is too large to preview ({size}). Download it to inspect locally.', {
+              size: formatSize(probe.size),
+            }));
+            return;
+          }
+          if (resolvedObjectSize && resolvedObjectSize > maxPreviewBytes) {
+            setError(tGlobal('File is too large to preview ({size} MB). Increase the {limit} MB text preview limit in Settings or download it.', { size: (resolvedObjectSize / 1024 / 1024).toFixed(2), limit: maxTextPreviewSizeMb }));
+            return;
+          }
           const textContent = await objectApi.getObjectContent(
             bucketName,
             bucketRegion,
@@ -288,6 +307,16 @@ export default function ObjectPreviewDialog({
       bucketRegion={bucketRegion}
       objectKey={objectKey}
       objectSize={objectSize}
+    />;
+  }
+
+  if (sqliteDecision === 'sqlite' && loadedObjectKey === objectKey && !isLoading && !error) {
+    return <SqlitePreviewDialog
+      open={open}
+      onClose={handleClose}
+      bucketName={bucketName}
+      bucketRegion={bucketRegion}
+      objectKey={objectKey}
     />;
   }
 

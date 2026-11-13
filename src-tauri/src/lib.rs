@@ -3,11 +3,12 @@ pub mod commands;
 pub mod credentials;
 pub mod error;
 pub mod s3;
+pub mod sqlite;
 pub mod transfer;
 
 use commands::{
     archive as archive_commands, bucket_management, buckets, objects, operations, profiles,
-    transfer as transfer_cmd,
+    sqlite as sqlite_commands, transfer as transfer_cmd,
 };
 use s3::S3ClientManager;
 use serde::Serialize;
@@ -63,6 +64,7 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(S3ClientManager::new())))
         .manage(Arc::new(TransferManager::new()))
         .manage(commands::sync::SyncPlans::default())
+        .manage(sqlite_commands::SqlitePreviewCache::default())
         .setup(|app| {
             // Add native menu on macOS to enable Copy/Paste/Cut/SelectAll/Undo/Redo shortcuts
             // Add native menu to enable standard shortcuts and window controls
@@ -322,6 +324,9 @@ pub fn run() {
             archive_commands::list_archive_entries,
             archive_commands::read_archive_entry,
             archive_commands::extract_archive_entry,
+            sqlite_commands::probe_sqlite_preview,
+            sqlite_commands::list_sqlite_tables,
+            sqlite_commands::read_sqlite_table,
             // File operations
             operations::put_object,
             operations::get_object,
