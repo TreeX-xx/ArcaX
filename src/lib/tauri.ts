@@ -152,6 +152,8 @@ export type CredentialType =
   | { type: 'CustomEndpoint'; endpoint_url: string; access_key_id: string; secret_access_key: string };
 
 export interface Profile {
+  addressing_style?: 'auto' | 'virtual' | 'path';
+  default_bucket?: string | null;
   public_urls?: PublicUrlSettings;
   id: string;
   name: string;

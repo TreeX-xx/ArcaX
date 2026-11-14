@@ -27,10 +27,15 @@ interface ToastItemProps {
   toast: Toast;
   onClose: () => void;
   onShowDetails: () => void;
+  paused: boolean;
 }
 
-function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
+function ToastItem({ toast, onClose, onShowDetails, paused }: ToastItemProps) {
   const { t } = useI18n();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const remaining = useRef(toast.duration ?? 5000);
+  const timerPaused = paused || hovered || focused;
   // Store onClose in a ref to prevent timer reset when parent re-renders
   const onCloseRef = useRef(onClose);
 
@@ -39,19 +44,30 @@ function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
   }, [onClose]);
 
   useEffect(() => {
-    if (toast.autoHide) {
+    if (toast.autoHide && !timerPaused) {
+      const startedAt = Date.now();
       const timer = setTimeout(() => {
         onCloseRef.current();
-      }, toast.duration || 5000);
-      return () => clearTimeout(timer);
+      }, remaining.current);
+      return () => {
+        clearTimeout(timer);
+        remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
+      };
     }
-  }, [toast.id, toast.autoHide, toast.duration]); // onClose intentionally removed - use ref
+  }, [toast.autoHide, timerPaused]);
 
   const hasDetails = !!toast.details || toast.message.length > 100;
 
   return (
     <Slide direction="left" in={true} mountOnEnter unmountOnExit>
       <Alert
+        role={toast.type === 'error' ? 'alert' : 'status'}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+        }}
         severity={toast.type}
         variant="filled"
         sx={{
@@ -67,6 +83,7 @@ function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
           <IconButton
             size="small"
             color="inherit"
+            aria-label={t('Close notification')}
             onClick={onClose}
             sx={{ mt: 0.5 }}
           >
@@ -88,6 +105,11 @@ function ToastItem({ toast, onClose, onShowDetails }: ToastItemProps) {
           >
             {toast.message}
           </Typography>
+          {(toast.count ?? 1) > 1 && (
+            <Typography variant="caption" component="div">
+              {t('Occurred {count} times', { count: toast.count ?? 1 })}
+            </Typography>
+          )}
           {toast.action && (
             <Button
               size="small"
@@ -181,6 +203,7 @@ export default function ToastContainer() {
               toast={toast}
               onClose={() => handleRemoveToast(toast.id)}
               onShowDetails={() => handleShowDetails(toast)}
+              paused={detailsDialog.open}
             />
           ))}
         </Stack>
@@ -226,7 +249,7 @@ export default function ToastContainer() {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDetails}>{t('Close')}</Button>
-          {detailsDialog.toast?.details && (
+          {detailsDialog.toast && (
             <Button
               variant="contained"
               startIcon={<CopyIcon />}

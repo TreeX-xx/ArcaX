@@ -4,15 +4,17 @@ import BucketPage from '@/app/bucket/page';
 import { objectApi, operationsApi, transferApi, type S3Object, type SearchObjectsResult } from '@/lib/tauri';
 import { useProfileStore } from '@/store/profileStore';
 import { useClipboardStore } from '@/store/clipboardStore';
+import { useToastStore } from '@/store/toastStore';
 
 const route = vi.hoisted(() => ({ params: 'name=a&region=us-east-1', push: vi.fn() }));
+const listing = vi.hoisted(() => ({ error: null as string | null, empty: false, refresh: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(route.params),
   useRouter: () => ({ push: route.push }),
 }));
 vi.mock('@/hooks/useObjects', () => ({ useObjects: () => ({
-  data: { objects: [{ key: 'root.txt', size: 10 }], common_prefixes: [] },
-  isLoading: false, error: null, refresh: vi.fn(), loadMore: vi.fn(),
+  data: listing.empty ? null : { objects: [{ key: 'root.txt', size: 10 }], common_prefixes: [] },
+  isLoading: false, error: listing.error, refresh: listing.refresh, loadMore: vi.fn(),
 }) }));
 vi.mock('@/lib/tauri', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/tauri')>();
@@ -40,9 +42,37 @@ const result: SearchObjectsResult = {
 };
 
 beforeEach(() => {
+  listing.error = null;
+  listing.empty = false;
+  useToastStore.getState().clearToasts();
   route.params = 'name=a&region=us-east-1';
   useProfileStore.getState().setActiveProfileId('a');
   vi.mocked(objectApi.searchObjects).mockResolvedValue(result);
+});
+
+test('initial loading failures stay on the page with retry and no duplicate toast', () => {
+  listing.error = 'S3 error: service error';
+  listing.empty = true;
+  render(<BucketPage />);
+  expect(screen.getByText('Failed to load objects')).toBeTruthy();
+  expect(screen.queryByText('Bucket Not Found')).toBeNull();
+  expect(screen.getByText(listing.error)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+  expect(listing.refresh).toHaveBeenCalledTimes(1);
+  expect(useToastStore.getState().toasts).toHaveLength(0);
+});
+
+test('refresh failures preserve the list with an inline warning that clears on recovery', () => {
+  listing.error = 'S3 error: service error';
+  const view = render(<BucketPage />);
+  expect(screen.getByText('Refresh failed. Showing previously loaded data.')).toBeTruthy();
+  expect(screen.getByText('root.txt')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+  expect(listing.refresh).toHaveBeenCalledTimes(1);
+  expect(useToastStore.getState().toasts).toHaveLength(0);
+  listing.error = null;
+  view.rerender(<BucketPage />);
+  expect(screen.queryByText('Refresh failed. Showing previously loaded data.')).toBeNull();
 });
 
 function search() {

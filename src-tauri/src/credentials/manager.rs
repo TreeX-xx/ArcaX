@@ -33,6 +33,11 @@ pub enum CredentialType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
+    /// Missing on older profiles: retain provider-aware automatic addressing.
+    #[serde(default)]
+    pub addressing_style: AddressingStyle,
+    #[serde(default)]
+    pub default_bucket: Option<String>,
     #[serde(default)]
     pub public_urls: crate::transfer::public_url::PublicUrls,
     #[serde(default)]
@@ -50,6 +55,22 @@ pub struct Profile {
 }
 
 impl Profile {
+    pub fn validate_connection(&self) -> Result<()> {
+        if let Some(bucket) = &self.default_bucket {
+            if bucket.is_empty()
+                || bucket.len() > 63
+                || !bucket
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+            {
+                return Err(AppError::ConfigError(
+                    "Enter a bucket name, not a URL or path.".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn cache_identity(&self) -> String {
         format!(
             "{}:{}",
@@ -63,6 +84,8 @@ impl Profile {
     pub fn new(name: String, credential_type: CredentialType, region: Option<String>) -> Self {
         let now = chrono::Utc::now();
         Self {
+            addressing_style: AddressingStyle::Auto,
+            default_bucket: None,
             public_urls: Default::default(),
             id: Uuid::new_v4().to_string(),
             name,
@@ -74,6 +97,15 @@ impl Profile {
             updated_at: Some(now),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AddressingStyle {
+    #[default]
+    Auto,
+    Virtual,
+    Path,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -254,6 +286,7 @@ impl ProfileManager {
     }
 
     pub async fn add_profile(&mut self, mut profile: Profile) -> Result<Profile> {
+        profile.validate_connection()?;
         profile.public_urls.validate()?;
         // Generate ID if not provided
         if profile.id.is_empty() {
@@ -301,6 +334,7 @@ impl ProfileManager {
     }
 
     pub async fn update_profile(&mut self, id: &str, mut profile: Profile) -> Result<Profile> {
+        profile.validate_connection()?;
         profile.public_urls.validate()?;
         let existing_profile = self
             .data
@@ -756,6 +790,8 @@ mod tests {
         profiles.insert(
             "legacy-key".to_string(),
             Profile {
+                addressing_style: Default::default(),
+                default_bucket: None,
                 public_urls: Default::default(),
                 secret_ref: None,
                 id: String::new(),

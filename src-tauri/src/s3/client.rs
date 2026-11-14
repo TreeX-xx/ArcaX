@@ -1,4 +1,4 @@
-use crate::credentials::{CredentialType, Profile};
+use crate::credentials::{AddressingStyle, CredentialType, Profile};
 use crate::error::{AppError, Result};
 use aws_config::Region;
 use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
@@ -24,6 +24,45 @@ pub(crate) fn normalize_endpoint_url(url: &str) -> String {
     }
 }
 
+/// Match the regional COS service host exactly; lookalike domains stay generic.
+pub(crate) fn cos_region(endpoint: &str) -> Option<String> {
+    let url = url::Url::parse(&normalize_endpoint_url(endpoint)).ok()?;
+    let host = url.host_str()?;
+    let region = host.strip_prefix("cos.")?.strip_suffix(".myqcloud.com")?;
+    if region.is_empty()
+        || !region
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return None;
+    }
+    Some(region.to_string())
+}
+
+pub(crate) fn profile_region(profile: &Profile) -> String {
+    if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
+        if let Some(region) = cos_region(endpoint_url) {
+            return region;
+        }
+    }
+    profile.region.clone().unwrap_or_else(|| "us-east-1".into())
+}
+
+pub(crate) fn use_path_style(profile: &Profile, endpoint: &str) -> bool {
+    match profile.addressing_style {
+        AddressingStyle::Auto => cos_region(endpoint).is_none(),
+        AddressingStyle::Virtual => false,
+        AddressingStyle::Path => true,
+    }
+}
+
+pub(crate) fn connection_error(code: &str, message: &str) -> String {
+    if code == "PathStyleDomainForbidden" {
+        return "This bucket requires virtual-hosted addressing. Select Auto or Virtual hosted in the connection settings.".into();
+    }
+    format!("Connection failed: {code}: {message}")
+}
+
 fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws_sdk_s3::Config {
     let mut builder = aws_sdk_s3::config::Builder::from(sdk_config);
 
@@ -31,18 +70,17 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
         builder = builder.endpoint_url(normalize_endpoint_url(endpoint_url));
     }
 
-    // A global endpoint_url loaded from an environment variable or shared
-    // profile is a custom S3 endpoint just as much as one entered in the UI.
-    // Path-style addressing is required by common providers such as MinIO
-    // unless they have explicitly configured wildcard bucket DNS.
-    if matches!(
-        profile.credential_type,
-        CredentialType::CustomEndpoint { .. }
-    ) || sdk_config.endpoint_url().is_some()
-    {
+    let endpoint = match &profile.credential_type {
+        CredentialType::CustomEndpoint { endpoint_url, .. } => Some(endpoint_url.as_str()),
+        _ => sdk_config.endpoint_url(),
+    };
+    if let Some(endpoint) = endpoint {
         builder = builder
-            .force_path_style(true)
+            .force_path_style(use_path_style(profile, endpoint))
             .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
+        if let Some(region) = cos_region(endpoint) {
+            builder = builder.region(Region::new(region));
+        }
     }
 
     builder = builder.request_checksum_calculation(RequestChecksumCalculation::WhenRequired);
@@ -56,9 +94,7 @@ pub(crate) async fn load_sdk_config(
     profile: &Profile,
     override_region: Option<String>,
 ) -> aws_config::SdkConfig {
-    let region_str = override_region
-        .or_else(|| profile.region.clone())
-        .unwrap_or_else(|| "us-east-1".to_string());
+    let region_str = override_region.unwrap_or_else(|| profile_region(profile));
     let region = Region::new(region_str);
 
     match &profile.credential_type {
@@ -443,6 +479,93 @@ mod tests {
     use aws_config::{Region, SdkConfig};
     use aws_sdk_s3::presigning::PresigningConfig;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn cos_presigned_requests_use_virtual_host_and_endpoint_region() {
+        for (style, endpoint, prefix) in [
+            (
+                crate::credentials::AddressingStyle::Auto,
+                "https://cos.ap-guangzhou.myqcloud.com",
+                "https://test-1250000000.cos.ap-guangzhou.myqcloud.com/folder/file.txt?",
+            ),
+            (
+                crate::credentials::AddressingStyle::Path,
+                "https://cos.ap-guangzhou.myqcloud.com",
+                "https://cos.ap-guangzhou.myqcloud.com/test-1250000000/folder/file.txt?",
+            ),
+            (
+                crate::credentials::AddressingStyle::Auto,
+                "http://localhost:9000",
+                "http://localhost:9000/test-1250000000/folder/file.txt?",
+            ),
+            (
+                crate::credentials::AddressingStyle::Virtual,
+                "https://storage.example.com",
+                "https://test-1250000000.storage.example.com/folder/file.txt?",
+            ),
+        ] {
+            let mut profile = Profile::new(
+                "test".into(),
+                CredentialType::CustomEndpoint {
+                    endpoint_url: endpoint.into(),
+                    access_key_id: "test".into(),
+                    secret_access_key: "test-secret".into(),
+                },
+                Some("us-east-1".into()),
+            );
+            profile.addressing_style = style;
+            let config = SdkConfig::builder()
+                .behavior_version(aws_config::BehaviorVersion::latest())
+                .region(Region::new("us-east-1"))
+                .credentials_provider(
+                    aws_credential_types::provider::SharedCredentialsProvider::new(
+                        aws_credential_types::Credentials::new(
+                            "test",
+                            "test-secret",
+                            None,
+                            None,
+                            "test",
+                        ),
+                    ),
+                )
+                .build();
+            let client = aws_sdk_s3::Client::from_conf(build_s3_config(&config, &profile));
+            let request = client
+                .get_object()
+                .bucket("test-1250000000")
+                .key("folder/file.txt")
+                .presigned(PresigningConfig::expires_in(Duration::from_secs(60)).unwrap())
+                .await
+                .unwrap();
+            assert!(request.uri().starts_with(prefix), "{}", request.uri());
+            if endpoint.contains("myqcloud") {
+                assert!(request.uri().contains("ap-guangzhou"));
+                assert!(!request.uri().contains("us-east-1"));
+            }
+        }
+    }
+
+    #[test]
+    fn cos_detection_and_legacy_profile_defaults() {
+        assert_eq!(
+            super::cos_region(" COS.ap-guangzhou.myqcloud.com ").as_deref(),
+            Some("ap-guangzhou")
+        );
+        for host in [
+            "https://cos.ap-guangzhou.myqcloud.com.evil.test",
+            "https://cos.ap-guangzhou.evil.myqcloud.com",
+            "https://localhost",
+            "https://bucket.cos.ap-guangzhou.myqcloud.com",
+        ] {
+            assert_eq!(super::cos_region(host), None);
+        }
+        let profile: Profile = serde_json::from_str(r#"{"name":"old","credential_type":{"type":"Environment"},"region":null,"is_default":false}"#).unwrap();
+        assert_eq!(
+            profile.addressing_style,
+            crate::credentials::AddressingStyle::Auto
+        );
+        assert_eq!(profile.default_bucket, None);
+    }
 
     #[test]
     fn bucket_regions_are_isolated_by_profile_and_revision() {

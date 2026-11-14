@@ -2,7 +2,7 @@
 
 ## Copy public URLs
 
-Select files and choose **Copy public URLs**, or use **Copy public URL** from a file's context menu. Connection settings provide optional public/CDN defaults and bucket-specific public roots. With no custom setting, Brows3 builds a path-style S3 endpoint URL. Keys are encoded segment by segment.
+Select files and choose **Copy public URLs**, or use **Copy public URL** from a file's context menu. Connection settings provide optional public/CDN defaults and bucket-specific public roots. With no custom setting, ArcaX uses the connection's addressing style for custom endpoints: Auto selects virtual-hosted URLs for regional Tencent COS endpoints and path-style URLs for other custom providers. Standard AWS connections retain path-style public URLs. Keys are encoded segment by segment.
 
 Each full URL can be edited for this copy only, including its host and path. This does not change saved connection settings. Multiple links are copied one per line. Folders are excluded. Links do not grant access or change bucket/object permissions.
 

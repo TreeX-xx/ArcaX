@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 const bucket = '/bucket?name=demo-bucket&region=us-east-1';
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400"><rect width="600" height="400" fill="#344b5c"/><circle cx="300" cy="200" r="100" fill="#dfb798"/></svg>';
 test.beforeEach(async ({ page, backend }) => {
-  backend.objects = ['a.svg', 'b.txt', 'c.zip', 'z.svg'].map(key => ({ key, size: 100, last_modified: null, storage_class: 'STANDARD' }));
+  backend.objects = ['a.svg', 'b.txt', 'c.bin', 'z.svg'].map(key => ({ key, size: 100, last_modified: null, storage_class: 'STANDARD' }));
   await page.route('https://media.arcax.test/*.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: svg }));
 });
 

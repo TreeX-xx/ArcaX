@@ -5,6 +5,20 @@
  * Placeholders use `{name}` and must be preserved exactly.
  */
 export const ZH_MESSAGES: Record<string, string> = {
+  "Paste OBS configuration": "粘贴 OBS 配置",
+  "Paste OBS_* YAML or env fields to fill this form. The pasted text is cleared immediately.": "在此粘贴 OBS_* 格式的 YAML 或环境变量配置，自动填写下方表单。粘贴原文会立即清空。",
+  "Invalid OBS configuration. Paste the OBS endpoint, access key, secret key and optional bucket fields.": "无法识别 OBS 配置。请粘贴端点、访问密钥、私有密钥及可选的存储桶字段。",
+  "Tencent COS detected. Region is read from the endpoint; Auto uses virtual-hosted addressing.": "已识别腾讯云 COS，地域由端点自动确定；自动模式使用虚拟主机寻址。",
+  "Addressing style": "寻址方式",
+  "Auto (recommended)": "自动（推荐）",
+  "Virtual hosted (bucket.endpoint)": "虚拟主机（桶名.端点）",
+  "Path style (endpoint/bucket)": "路径式（端点/桶名）",
+  "Target bucket (optional)": "目标存储桶（可选）",
+  "When set, test and browse this bucket directly without listing all buckets. Enter the bucket name only.": "填写后将直接测试并浏览此桶，无需列出所有桶的权限。仅填写桶名。",
+  "Target bucket is accessible. Listing permission verified.": "目标存储桶可访问，已验证列目录权限。",
+  "Cannot list buckets. Enter a target bucket to test its listing permission directly.": "无法列出存储桶。请填写目标桶名，直接验证该桶的列目录权限。",
+  "Connection test timed out. Check the endpoint and network.": "连接测试超时，请检查端点和网络。",
+  "This bucket requires virtual-hosted addressing. Select Auto or Virtual hosted in the connection settings.": "此桶要求使用虚拟主机寻址。请在连接设置中选择“自动”或“虚拟主机”。",
   "0 is unlimited. Otherwise 64 to 1,048,576 KiB/s.": "0 表示不限速，否则为 64 到 1,048,576 KiB/s。",
   "1 to 5 attempts, including the first. Only temporary download failures retry automatically.": "尝试次数为 1 到 5 次（含首次）。只有临时下载失败才会自动重试。",
   "A fast, focused desktop client for Amazon S3 and S3-compatible object storage. Built for large buckets, deep prefixes, and quick transfers.": "一款快速、专注的 Amazon S3 及 S3 兼容对象存储桌面客户端。专为大型存储桶、深层前缀和快速传输而设计。",
@@ -870,4 +884,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "NULL": "空值",
   "BLOB ({size} bytes)": "二进制（{size} 字节）",
   "This SQLite database is too large to preview ({size}). Download it to inspect locally.": "此 SQLite 数据库过大，无法预览（{size}）。请下载后在本地查看。",
+  "Close notification": "关闭通知",
+  "Occurred {count} times": "已发生 {count} 次",
+  "Refresh failed. Showing previously loaded data.": "刷新失败，当前显示上次加载的数据。",
+  "Could not load this folder. Try again or check the connection settings.": "无法加载此文件夹，请重试或检查连接设置。",
 };

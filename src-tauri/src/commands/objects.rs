@@ -562,6 +562,14 @@ pub async fn list_objects(
     let output = match result {
         Ok(out) => out,
         Err(err) => {
+            use aws_sdk_s3::error::ProvideErrorMetadata;
+            if let Some(service) = err.as_service_error() {
+                if service.code() == Some("PathStyleDomainForbidden") {
+                    return Err(crate::error::AppError::S3Error(
+                        crate::s3::client::connection_error("PathStyleDomainForbidden", ""),
+                    ));
+                }
+            }
             log::warn!("Initial list_objects failed: {}", err);
             // Attempt to detect region and retry
             let detected_region = {

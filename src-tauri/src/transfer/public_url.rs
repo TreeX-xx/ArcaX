@@ -61,10 +61,17 @@ pub fn build(profile: &Profile, bucket: &str, region: Option<&str>, key: &str) -
     } else if !settings.base_url.is_empty() {
         (settings.base_url.clone(), settings.include_bucket)
     } else if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
-        (
-            crate::s3::client::normalize_endpoint_url(endpoint_url),
-            true,
-        )
+        let mut endpoint = base_url(&crate::s3::client::normalize_endpoint_url(endpoint_url))?;
+        let path_style = crate::s3::client::use_path_style(profile, endpoint_url);
+        if !path_style {
+            let host = endpoint
+                .host_str()
+                .ok_or_else(|| AppError::ConfigError("Endpoint has no host.".into()))?;
+            endpoint
+                .set_host(Some(&format!("{bucket}.{host}")))
+                .map_err(|_| AppError::ConfigError("Invalid virtual-hosted endpoint.".into()))?;
+        }
+        (endpoint.to_string(), path_style)
     } else {
         let region = region.or(profile.region.as_deref()).unwrap_or("us-east-1");
         if !region
@@ -103,6 +110,22 @@ pub fn build(profile: &Profile, bucket: &str, region: Option<&str>, key: &str) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cos_public_urls_match_virtual_hosted_requests() {
+        let profile = crate::credentials::Profile::new(
+            "COS".into(),
+            crate::credentials::CredentialType::CustomEndpoint {
+                endpoint_url: "https://cos.ap-guangzhou.myqcloud.com".into(),
+                access_key_id: "test".into(),
+                secret_access_key: "test-secret".into(),
+            },
+            None,
+        );
+        assert_eq!(
+            super::build(&profile, "test-1250000000", None, "folder/a b.txt").unwrap(),
+            "https://test-1250000000.cos.ap-guangzhou.myqcloud.com/folder/a%20b.txt"
+        );
+    }
     use super::*;
     #[test]
     fn encodes_literal_keys_and_honors_bucket_roots() {

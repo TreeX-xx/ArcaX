@@ -19,7 +19,7 @@ export function useSavedJobEvents() {
       const status = job.last_run?.status ? tGlobal(job.last_run.status) : tGlobal('Finished run');
       notify(`${job.config.name}: ${status}`, job.last_run?.message ? tGlobal(job.last_run.message) : undefined, { label: tGlobal('View jobs'), onClick: () => router.push('/jobs') });
     }).then(keep).catch(error => console.warn('Job notifications unavailable:', error));
-    void listen<string>('saved-job-storage-error', ({ payload }) => { if (!stopped) toast.error(tGlobal(payload)); }).then(keep).catch(error => console.warn('Job storage notifications unavailable:', error));
+    void listen<string>('saved-job-storage-error', ({ payload }) => { if (!stopped) toast.error(tGlobal(payload), undefined, undefined, { autoHide: false, dedupeKey: 'saved-job-storage-error' }); }).then(keep).catch(error => console.warn('Job storage notifications unavailable:', error));
     return () => { stopped = true; unlisteners.forEach(stop => stop()); };
   }, [router]);
 }

@@ -5,7 +5,7 @@
   "kind": "module",
   "lifecycle": "accepted",
   "created": "2026-10-28",
-  "updated": "2026-10-30T03:23:23Z",
+  "updated": "2026-11-14T02:06:29Z",
   "role": "project",
   "moduleState": "implemented"
 }
@@ -25,6 +25,8 @@ Interface language is a persisted user setting. See [Internationalization](i18n.
 
 ZIP archive browsing uses a synchronous `Read + Seek` range reader in `src-tauri/src/archive/` and is surfaced by `ArchivePreviewDialog`; see [Archive browsing](archive-browsing.md) for the data path, limits and planned TAR/gzip work.
 
+S3-compatible profiles support provider-aware addressing and direct target-bucket access; see [S3 connections](s3-connections.md).
+
 ## Related documents
 
 - [Product direction](product-direction.md) — exploratory feature directions and a suggested sequence beyond the 0.0.2 baseline.
@@ -32,3 +34,4 @@ ZIP archive browsing uses a synchronous `Read + Seek` range reader in `src-tauri
 - [File drag and drop](file-drag-and-drop.md) — planned OS drop upload and native drag-out design.
 - [Internationalization](i18n.md) — English/Chinese switching, message catalog and covered surfaces.
 - [Release and automatic updates](release-process.md) — local build, GitHub Releases and the deferred updater direction.
+- [S3 connections](s3-connections.md) — COS addressing, literal OBS configuration import and target-bucket checks.

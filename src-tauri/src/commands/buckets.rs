@@ -14,6 +14,25 @@ pub struct BucketWithRegion {
     pub total_size_formatted: Option<String>,
 }
 
+async fn configured_buckets(
+    client: &aws_sdk_s3::Client,
+    profile: &crate::credentials::Profile,
+) -> Result<Vec<BucketInfo>, String> {
+    if let Some(name) = &profile.default_bucket {
+        return Ok(vec![BucketInfo {
+            name: name.clone(),
+            region: Some(s3::client::profile_region(profile)),
+            creation_date: None,
+            object_count: None,
+            total_size: None,
+            total_size_formatted: None,
+        }]);
+    }
+    s3::client::list_buckets(client)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List all accessible S3 buckets
 #[tauri::command]
 pub async fn list_buckets(
@@ -40,9 +59,7 @@ pub async fn list_buckets(
     drop(s3_manager);
 
     // List buckets
-    let buckets = s3::client::list_buckets(&client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let buckets = configured_buckets(&client, &active_profile).await?;
 
     Ok(buckets)
 }
@@ -73,9 +90,7 @@ pub async fn list_buckets_with_regions(
     drop(s3_manager);
 
     // List buckets
-    let buckets = s3::client::list_buckets(&client)
-        .await
-        .map_err(|e| e.to_string())?;
+    let buckets = configured_buckets(&client, &active_profile).await?;
 
     // For custom endpoints (non-AWS providers like Linode, DigitalOcean, MinIO, etc.),
     // the GetBucketLocation API is often unsupported and causes "dispatch failure" errors.
@@ -84,10 +99,7 @@ pub async fn list_buckets_with_regions(
         &active_profile.credential_type,
         crate::credentials::CredentialType::CustomEndpoint { .. }
     );
-    let profile_region = active_profile
-        .region
-        .clone()
-        .unwrap_or_else(|| "us-east-1".to_string());
+    let profile_region = s3::client::profile_region(&active_profile);
 
     if is_custom_endpoint {
         // Skip GetBucketLocation entirely for custom endpoints
@@ -166,10 +178,7 @@ pub async fn get_bucket_region(
         &active_profile.credential_type,
         crate::credentials::CredentialType::CustomEndpoint { .. }
     ) {
-        let region = active_profile
-            .region
-            .clone()
-            .unwrap_or_else(|| "us-east-1".to_string());
+        let region = s3::client::profile_region(&active_profile);
         let mut s3_manager = s3_state.write().await;
         s3_manager.set_bucket_region(&active_profile, &bucket_name, region.clone());
         return Ok(region);
@@ -196,4 +205,27 @@ pub async fn refresh_s3_client(s3_state: State<'_, S3State>) -> Result<(), Strin
     let mut s3_manager = s3_state.write().await;
     s3_manager.clear_cache();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[tokio::test]
+    async fn configured_bucket_is_available_without_account_listing_permission() {
+        let (client, server) = crate::commands::test_s3::scripted_client(vec![]).await;
+        let mut profile = crate::credentials::Profile::new(
+            "COS".into(),
+            crate::credentials::CredentialType::CustomEndpoint {
+                endpoint_url: "https://cos.ap-guangzhou.myqcloud.com".into(),
+                access_key_id: "test".into(),
+                secret_access_key: "test-secret".into(),
+            },
+            Some("us-east-1".into()),
+        );
+        profile.default_bucket = Some("target-1250000000".into());
+        let buckets = super::configured_buckets(&client, &profile).await.unwrap();
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].name, "target-1250000000");
+        assert_eq!(buckets[0].region.as_deref(), Some("ap-guangzhou"));
+        assert!(server.await.unwrap().is_empty());
+    }
 }

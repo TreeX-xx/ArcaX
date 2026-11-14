@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-11-14
+
+### Added
+- Custom S3 connections accept literal OBS YAML/env configuration paste, an optional target bucket and explicit addressing-style overrides. Target-bucket tests check listing access without requiring account-wide bucket discovery.
+
+### Fixed
+- Regional Tencent COS endpoints use virtual-hosted addressing and derive their signing region from the endpoint, including existing profiles. Generated public URLs follow the same addressing choice.
+- Connection tests report denied listing access as a failure and limit network checks to 20 seconds.
+- Repeated error notifications merge and expire, while object-list failures show inline retry guidance and refresh failures retain previously loaded data.
+
+## [0.0.5] - 2026-11-13
+
+### Added
+- Opening preview on a SQLite database now shows its tables and a paged row view. Detection uses the `SQLite format 3` header when preview is opened the same way as for ZIP or text; there is no format picker. This covers extensionless names such as `toolDB` (NX CAM tool libraries) and ordinary `.db`, `.sqlite`, and `.sqlite3` names. The view is read-only (a temporary copy, with a 64 MB size cap). A SQLite database is never opened as text in the editor.
+
 ## [0.0.4] - 2026-11-09
 
 ### Added

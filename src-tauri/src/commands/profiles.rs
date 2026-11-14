@@ -84,7 +84,7 @@ pub async fn test_connection(
     mut profile: Profile,
     state: State<'_, ProfileState>,
 ) -> Result<TestConnectionResult, String> {
-    use aws_sdk_s3::error::ProvideErrorMetadata;
+    profile.validate_connection().map_err(|e| e.to_string())?;
 
     // Hydrate profile secrets from keychain if they are empty
     {
@@ -129,19 +129,72 @@ pub async fn test_connection(
 
     let client = crate::s3::client::client_from_sdk_config(&sdk_config, &profile);
 
+    check_connection(&client, &profile).await
+}
+
+async fn check_connection(
+    client: &aws_sdk_s3::Client,
+    profile: &Profile,
+) -> Result<TestConnectionResult, String> {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+    let region = Some(crate::s3::client::profile_region(profile));
+    if let Some(bucket) = &profile.default_bucket {
+        let result = tokio::time::timeout(
+            Duration::from_secs(20),
+            client.list_objects_v2().bucket(bucket).max_keys(1).send(),
+        )
+        .await;
+        let (success, message) = match result {
+            Ok(Ok(_)) => (
+                true,
+                "Target bucket is accessible. Listing permission verified.".to_string(),
+            ),
+            Ok(Err(error)) => {
+                let service = error.as_service_error();
+                (
+                    false,
+                    crate::s3::client::connection_error(
+                        service.and_then(|e| e.code()).unwrap_or("Unknown"),
+                        service
+                            .and_then(|e| e.message())
+                            .unwrap_or("Could not list the target bucket."),
+                    ),
+                )
+            }
+            Err(_) => (
+                false,
+                "Connection test timed out. Check the endpoint and network.".to_string(),
+            ),
+        };
+        return Ok(TestConnectionResult {
+            success,
+            message,
+            region,
+            bucket_count: None,
+        });
+    }
+
     // Test connection by listing buckets
-    match client.list_buckets().send().await {
+    let response =
+        tokio::time::timeout(Duration::from_secs(20), client.list_buckets().send()).await;
+    let response = match response {
+        Ok(response) => response,
+        Err(_) => {
+            return Ok(TestConnectionResult {
+                success: false,
+                message: "Connection test timed out. Check the endpoint and network.".into(),
+                region,
+                bucket_count: None,
+            })
+        }
+    };
+    match response {
         Ok(response) => {
             let bucket_count = response.buckets().len();
             Ok(TestConnectionResult {
                 success: true,
                 message: format!("Connected successfully! Found {} bucket(s)", bucket_count),
-                region: Some(
-                    profile
-                        .region
-                        .clone()
-                        .unwrap_or_else(|| "us-east-1".to_string()),
-                ),
+                region,
                 bucket_count: Some(bucket_count),
             })
         }
@@ -163,20 +216,19 @@ pub async fn test_connection(
             let code = s3_err.and_then(|s| s.code()).unwrap_or("Unknown");
             let message = s3_err.and_then(|s| s.message()).unwrap_or("No message");
 
-            // If it's an AccessDenied, it means the CREDENTIALS are correct, but the user
-            // lacks permission to list all buckets. We can still consider this "connected".
+            // A denied request does not establish valid credentials or bucket access.
             if code == "AccessDenied" || code == "403" {
                 return Ok(TestConnectionResult {
-                    success: true,
-                    message: "Connected! (Note: You are authenticated, but lack permission to list all buckets. You may need to enter bucket names manually or use a direct link.)".to_string(),
-                    region: Some(profile.region.clone().unwrap_or_else(|| "us-east-1".to_string())),
-                    bucket_count: Some(0),
+                    success: false,
+                    message: "Cannot list buckets. Enter a target bucket to test its listing permission directly.".to_string(),
+                    region,
+                    bucket_count: None,
                 });
             }
 
             Ok(TestConnectionResult {
                 success: false,
-                message: format!("Connection failed: {}: {}", code, message),
+                message: crate::s3::client::connection_error(code, message),
                 region: None,
                 bucket_count: None,
             })
@@ -430,6 +482,53 @@ pub async fn check_aws_environment() -> Result<EnvironmentCheck, String> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn target_bucket_test_checks_listing_without_listing_all_buckets() {
+        use crate::commands::test_s3::{response, scripted_client};
+        let (client, server) = scripted_client(vec![response(200, "Content-Type: application/xml\r\n", "<ListBucketResult><Name>target</Name><KeyCount>0</KeyCount><IsTruncated>false</IsTruncated></ListBucketResult>")]).await;
+        let mut profile = crate::credentials::Profile::new(
+            "test".into(),
+            crate::credentials::CredentialType::Environment,
+            None,
+        );
+        profile.default_bucket = Some("target".into());
+        assert!(
+            super::check_connection(&client, &profile)
+                .await
+                .unwrap()
+                .success
+        );
+        let requests = server.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0].starts_with("GET /target?") || requests[0].starts_with("GET /target/?")
+        );
+        assert!(requests[0].contains("max-keys=1"));
+        assert!(requests[0].contains("list-type=2"));
+    }
+
+    #[tokio::test]
+    async fn denied_listing_is_not_reported_as_connected() {
+        use crate::commands::test_s3::{response, scripted_client};
+        for bucket in [None, Some("target".to_string())] {
+            let (client, server) = scripted_client(vec![response(
+                403,
+                "Content-Type: application/xml\r\n",
+                "<Error><Code>AccessDenied</Code><Message>Access denied</Message></Error>",
+            )])
+            .await;
+            let mut profile = crate::credentials::Profile::new(
+                "test".into(),
+                crate::credentials::CredentialType::Environment,
+                None,
+            );
+            profile.default_bucket = bucket;
+            let result = super::check_connection(&client, &profile).await.unwrap();
+            assert!(!result.success);
+            assert_eq!(result.bucket_count, None);
+            server.await.unwrap();
+        }
+    }
     use super::{parse_profile_file, LocalProfileMetadata, ProfileFileKind};
     use std::collections::HashMap;
 

@@ -1,6 +1,6 @@
 [package]
 name = "arcax"
-version = "0.0.4"
+version = "0.0.6"
 description = "Fast, focused desktop S3 browser for AWS S3 and S3-compatible storage."
 authors = ["ArcaX"]
 license = "MIT"

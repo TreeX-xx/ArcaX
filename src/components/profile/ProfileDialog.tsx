@@ -47,6 +47,7 @@ import { BaseDialog } from '../common/BaseDialog';
 import PublicUrlFields, { emptyPublicUrlForm, publicUrlSettings, PublicUrlForm } from './PublicUrlFields';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { useI18n } from '@/lib/i18n';
+import { cosRegion, parseObsConfig } from '@/lib/s3Endpoint';
 
 const AWS_REGIONS = [
   'auto',
@@ -71,6 +72,8 @@ const AWS_REGIONS = [
 type CredentialTypeKey = 'Environment' | 'SharedConfig' | 'Manual' | 'CustomEndpoint';
 
 type ProfileFormData = {
+  addressingStyle: 'auto' | 'virtual' | 'path';
+  defaultBucket: string;
   publicUrls: PublicUrlForm;
   name: string;
   credentialType: CredentialTypeKey;
@@ -101,6 +104,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [formData, setFormData] = useState<ProfileFormData>({
+    addressingStyle: 'auto',
+    defaultBucket: '',
     publicUrls: emptyPublicUrlForm(),
     name: '',
     credentialType: 'Environment' as CredentialTypeKey,
@@ -171,11 +176,18 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   }, [open, mode, editProfile, formData.name, t]);
 
   const updateField = <K extends keyof ProfileFormData>(field: K, value: ProfileFormData[K]) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    const region = field === 'endpointUrl' ? cosRegion(String(value)) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+      ...(region ? { region } : {}),
+    }));
   };
 
   const resetForm = useCallback(() => {
     setFormData({
+      addressingStyle: 'auto',
+      defaultBucket: '',
       publicUrls: emptyPublicUrlForm(),
       name: '',
       credentialType: 'Environment',
@@ -228,10 +240,12 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     const endpointUrl = cred.type === 'CustomEndpoint' ? cred.endpoint_url : '';
 
     setFormData({
+      addressingStyle: profile.addressing_style || 'auto',
+      defaultBucket: profile.default_bucket || '',
       publicUrls: profile.public_urls ? { base: profile.public_urls.base_url, includeBucket: profile.public_urls.include_bucket, overrides: Object.entries(profile.public_urls.bucket_overrides).map(([bucket, url]) => ({ bucket, url })) } : emptyPublicUrlForm(),
       name: profile.name,
       credentialType: cred.type as CredentialTypeKey,
-      region: profile.region || 'us-east-1',
+      region: cosRegion(endpointUrl) || profile.region || 'us-east-1',
       profileName: cred.type === 'SharedConfig' ? (cred.profile_name || 'default') : 'default',
       accessKeyId: 'access_key_id' in cred ? cred.access_key_id : '',
       secretAccessKey: 'secret_access_key' in cred ? cred.secret_access_key : '',
@@ -240,7 +254,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   };
 
   const handleCredentialTypeChange = (credentialType: CredentialTypeKey) => {
-    updateField('credentialType', credentialType);
+    const region = credentialType === 'CustomEndpoint' ? cosRegion(formData.endpointUrl) : undefined;
+    setFormData(prev => ({ ...prev, credentialType, ...(region ? { region } : {}) }));
   };
 
   const handleFormCancel = () => {
@@ -288,7 +303,9 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     
     try {
       const profile: Partial<Profile> = {
-        id: editProfile?.id || '',
+        addressing_style: formData.addressingStyle,
+        default_bucket: formData.defaultBucket.trim() || null,
+        id: selectedProfile?.id || editProfile?.id || '',
         name: formData.name || t('Test'),
         credential_type: buildCredentialType(),
         region: formData.region,
@@ -301,7 +318,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
       }
     } catch (err) {
       if (requestId === testRequestIdRef.current) {
-        setError(err instanceof Error ? err.message : t('Connection test failed'));
+        setError(err instanceof Error ? err.message : typeof err === 'string' ? err : t('Connection test failed'));
       }
     } finally {
       if (requestId === testRequestIdRef.current) {
@@ -342,6 +359,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     
     try {
       const profileData: Partial<Profile> = {
+        addressing_style: formData.addressingStyle,
+        default_bucket: formData.defaultBucket.trim() || null,
         name: formData.name,
         public_urls: publicUrlSettings(formData.publicUrls),
         credential_type: buildCredentialType(),
@@ -727,16 +746,42 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         
         {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, p: 3, borderRadius: 1.5, border: '1px dashed', borderColor: 'divider', bgcolor: 'background.default' }}>
-                {formData.credentialType === 'CustomEndpoint' && (
+                {formData.credentialType === 'CustomEndpoint' && (<>
+                  <TextField
+                    label={t('Paste OBS configuration')}
+                    value=""
+                    onChange={() => {}}
+                    placeholder="OBS_ENDPOINT_URL: …"
+                    helperText={t('Paste OBS_* YAML or env fields to fill this form. The pasted text is cleared immediately.')}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      try {
+                        const imported = parseObsConfig(event.clipboardData.getData('text'));
+                        setFormData(prev => ({ ...prev, ...imported, addressingStyle: 'auto', region: cosRegion(imported.endpointUrl) || prev.region }));
+                        setError(null);
+                      } catch (err) { setError(t(err instanceof Error ? err.message : 'Invalid OBS configuration. Paste the OBS endpoint, access key, secret key and optional bucket fields.')); }
+                    }}
+                    fullWidth
+                    slotProps={{ htmlInput: { autoComplete: 'off' } }}
+                  />
                   <TextField
                     label={t('Endpoint URL')}
                     value={formData.endpointUrl}
                     onChange={(e) => updateField('endpointUrl', e.target.value)}
                     fullWidth
-                    placeholder="https://account-id.r2.cloudflarestorage.com"
+                    placeholder="https://cos.ap-guangzhou.myqcloud.com"
+                    helperText={cosRegion(formData.endpointUrl) ? t('Tencent COS detected. Region is read from the endpoint; Auto uses virtual-hosted addressing.') : undefined}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
                   />
-                )}
+                  <FormControl fullWidth>
+                    <InputLabel id="addressing-style-label">{t('Addressing style')}</InputLabel>
+                    <Select labelId="addressing-style-label" label={t('Addressing style')} value={formData.addressingStyle} onChange={e => updateField('addressingStyle', e.target.value as ProfileFormData['addressingStyle'])}>
+                      <MenuItem value="auto">{t('Auto (recommended)')}</MenuItem>
+                      <MenuItem value="virtual">{t('Virtual hosted (bucket.endpoint)')}</MenuItem>
+                      <MenuItem value="path">{t('Path style (endpoint/bucket)')}</MenuItem>
+                    </Select>
+                  </FormControl>
+                </>)}
                 <TextField
                     label={t('Access Key ID')}
                     value={formData.accessKeyId}
@@ -758,6 +803,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         <Autocomplete
           freeSolo
           options={AWS_REGIONS}
+          disabled={formData.credentialType === 'CustomEndpoint' && !!cosRegion(formData.endpointUrl)}
           value={formData.region}
           onChange={(_, value) => updateField('region', value || '')}
           onInputChange={(_, value) => updateField('region', value)}
@@ -772,6 +818,15 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1, fontWeight: 600 } }}
             />
           )}
+        />
+
+        <TextField
+          label={t('Target bucket (optional)')}
+          value={formData.defaultBucket}
+          onChange={e => updateField('defaultBucket', e.target.value)}
+          placeholder="my-bucket-1250000000"
+          helperText={t('When set, test and browse this bucket directly without listing all buckets. Enter the bucket name only.')}
+          fullWidth
         />
         
         <PublicUrlFields value={formData.publicUrls} onChange={value => updateField('publicUrls', value)} />
@@ -800,6 +855,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           {error && (
             <Alert severity="error" variant="filled" sx={{ borderRadius: 1, fontWeight: 600 }}>{error}</Alert>
           )}
+          {testResult && <Alert severity={testResult.success ? 'success' : 'warning'} sx={{ borderRadius: 1 }}>{t(testResult.message)}</Alert>}
         </Box>
       </Box>
     </Fade>

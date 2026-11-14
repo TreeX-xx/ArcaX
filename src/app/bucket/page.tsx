@@ -75,7 +75,7 @@ import { toast } from '@/store/toastStore';
 import { useHistoryStore } from '@/store/historyStore';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { StyledCheckbox } from '@/components/common/StyledCheckbox';
-import { useI18n, tGlobal } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n';
 
 // Concurrent paste batch size
 const PASTE_CONCURRENCY = 5;
@@ -111,13 +111,6 @@ function BucketContent() {
   const [isDeepSearch, setIsDeepSearch] = useState(false);
   const [searchResults, setSearchResults] = useState<{ viewKey: string; objects: S3Object[] } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-
-  // Error handling effect
-  useEffect(() => {
-    if (initialError) {
-      toast.error(typeof initialError === 'string' ? initialError : tGlobal('Failed to load objects'));
-    }
-  }, [initialError]);
 
   // Track previous job statuses to detect completions
   // We use a ref to track status without causing re-renders
@@ -1015,7 +1008,6 @@ function BucketContent() {
   }
 
   // Show error state if bucket failed to load
-  // Show error state if bucket failed to load
   if (initialError && !isLoading && !data) {
     // Check if this might be a prefix-restricted access issue
     const isAccessDenied = initialError.toLowerCase().includes('access') ||
@@ -1037,7 +1029,7 @@ function BucketContent() {
       }}>
         <StorageIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
         <Typography variant="h5" fontWeight={600} gutterBottom>
-          {isAccessDenied ? t('Access Restricted') : t('Bucket Not Found')}
+          {isAccessDenied ? t('Access Restricted') : t('Failed to load objects')}
         </Typography>
         <Typography color="text.secondary" variant="body1" sx={{ fontFamily: 'monospace', bgcolor: 'action.hover', p: 1, borderRadius: 1, maxWidth: '100%', overflow: 'auto' }}>
           {initialError}
@@ -1065,7 +1057,7 @@ function BucketContent() {
           </>
         ) : (
           <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-            {t('This bucket may not exist, or you might not have permission to access it.')}
+            {t('Could not load this folder. Try again or check the connection settings.')}
           </Typography>
         )}
 
@@ -1091,6 +1083,14 @@ function BucketContent() {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {initialError && data && !isLoading && (
+        <Alert severity="warning" sx={{ mb: 2 }} action={
+          <Button color="inherit" size="small" onClick={() => refresh()}>{t('Try Again')}</Button>
+        }>
+          {t('Refresh failed. Showing previously loaded data.')}
+          <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>{initialError}</Typography>
+        </Alert>
+      )}
       {/* Header & Breadcrumbs */}
       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 2, rowGap: 1.5 }}>
         <IconButton onClick={handleBack} size="small">

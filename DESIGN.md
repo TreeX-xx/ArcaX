@@ -121,6 +121,7 @@ Controls use an 8px radius, dialogs and menus 8–10px, and pills are reserved f
 - **Timestamps**: files show local `YYYY-MM-DD HH:mm`. Folders show the newest direct-child timestamp or a folder-marker timestamp; unavailable values render `—` with an explanatory tooltip.
 - **Sidebar**: selected items use the accent selection wash and a neutral icon; buckets use the storage icon at reduced opacity.
 - **Status**: semantic colors are limited to transfer state, alerts, and errors.
+- **Notifications**: show at most three toasts; a new distinct notification replaces the oldest. Errors dismiss after eight seconds, other notifications after five. Hover, keyboard focus, and an open details dialog pause the remaining time. Matching type/message/details/action notifications merge with an occurrence count without extending their lifetime; callers can supply a resource-scoped `dedupeKey` when needed. Scheduling storage failures explicitly disable automatic dismissal. Object-list loading failures stay in the page with retry; refresh failures retain the previous data with an inline warning, without repeated toasts. Toasts are transient feedback, not an error history; task failures remain in their task views.
 
 ## Do's and Don'ts
 
