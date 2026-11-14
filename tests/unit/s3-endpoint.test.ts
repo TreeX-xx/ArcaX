@@ -30,3 +30,21 @@ test('invalid imports do not echo secrets in errors', () => {
 test('unquoted env credentials retain punctuation literally', () => {
   expect(parseObsConfig('OBS_ENDPOINT_URL=https://cos.ap-guangzhou.myqcloud.com\nOBS_ACCESS_KEY=test\nOBS_SECRET_KEY=literal,').secretAccessKey).toBe('literal,');
 });
+
+import cases from '../fixtures/s3-providers.json';
+import { endpointInfo, parseConnectionConfig, providerEndpoint } from '@/lib/s3Endpoint';
+test.each(cases)('provider recognition matches the native fixtures: $endpoint', entry => {
+  expect(endpointInfo(entry.endpoint)).toEqual(entry.provider ? { provider: entry.provider, region: entry.region } : undefined);
+});
+test('provider defaults and imports include temporary credentials without evaluating literals', () => {
+  expect(providerEndpoint('oss', 'cn-hangzhou')).toBe('https://s3.oss-cn-hangzhou.aliyuncs.com');
+  expect(providerEndpoint('obs', 'cn-north-4')).toBe('https://obs.cn-north-4.myhuaweicloud.com');
+  expect(providerEndpoint('oss', '../invalid')).toBe('');
+  expect(parseConnectionConfig('OSS_ENDPOINT=https://s3.oss-cn-hangzhou.aliyuncs.com\nOSS_ACCESS_KEY_ID=test\nOSS_ACCESS_KEY_SECRET=literal$()\nOSS_SECURITY_TOKEN=token')).toMatchObject({ accessKeyId: 'test', secretAccessKey: 'literal$()', sessionToken: 'token' });
+  expect(() => parseConnectionConfig('OBS_ENDPOINT_URL=https://one\nOSS_ENDPOINT=https://two\nOSS_ACCESS_KEY_ID=test\nOSS_ACCESS_KEY_SECRET=secret')).toThrow(/^Invalid connection configuration/);
+});
+
+
+test('standard S3 endpoint and bucket aliases import alongside AWS temporary credentials', () => {
+  expect(parseConnectionConfig('S3_ENDPOINT=https://storage.example.com\nAWS_ACCESS_KEY_ID=test\nAWS_SECRET_ACCESS_KEY=secret\nAWS_SESSION_TOKEN=token\nS3_BUCKET=bucket')).toMatchObject({ endpointUrl: 'https://storage.example.com', sessionToken: 'token', defaultBucket: 'bucket' });
+});

@@ -152,6 +152,9 @@ export type CredentialType =
   | { type: 'CustomEndpoint'; endpoint_url: string; access_key_id: string; secret_access_key: string };
 
 export interface Profile {
+  provider?: 'auto' | 'cos' | 'oss' | 'obs';
+  session_token?: string | null;
+  has_session_token?: boolean;
   addressing_style?: 'auto' | 'virtual' | 'path';
   default_bucket?: string | null;
   public_urls?: PublicUrlSettings;

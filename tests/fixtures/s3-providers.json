@@ -1,0 +1,12 @@
+[
+ {"endpoint":" COS.ap-guangzhou.myqcloud.com ","provider":"cos","region":"ap-guangzhou"},
+ {"endpoint":"https://s3.oss-cn-hangzhou.aliyuncs.com","provider":"oss","region":"cn-hangzhou"},
+ {"endpoint":"https://oss-cn-shanghai.aliyuncs.com","provider":"oss","region":"cn-shanghai"},
+ {"endpoint":"https://s3.oss-cn-beijing-internal.aliyuncs.com","provider":"oss","region":"cn-beijing"},
+ {"endpoint":"https://obs.cn-north-4.myhuaweicloud.com","provider":"obs","region":"cn-north-4"},
+ {"endpoint":"http://localhost:9000","provider":null,"region":null},
+ {"endpoint":"https://bucket.obs.cn-north-4.myhuaweicloud.com","provider":null,"region":null},
+ {"endpoint":"https://s3.oss-cn-hangzhou.aliyuncs.com.evil.test","provider":null,"region":null},
+ {"endpoint":"https://cos.ap-guangzhou.evil.myqcloud.com","provider":null,"region":null},
+ {"endpoint":"https://obs.cn-north-4.evil.myhuaweicloud.com","provider":null,"region":null}
+]

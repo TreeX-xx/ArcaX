@@ -109,7 +109,7 @@ test('dark connection configuration persists and import validation prevents writ
   await page.getByRole('combobox').filter({ hasText: 'Development' }).click();
   await page.getByRole('option', { name: /Development/ }).getByRole('button').click();
   let dialog = page.getByRole('dialog');
-  await dialog.getByRole('button', { name: 'Public URLs and CDN (optional)' }).click();
+  await dialog.getByRole('button', { name: 'Advanced settings' }).click();
   await dialog.getByLabel('Public / CDN base URL').fill('https://cdn.example.com');
   await dialog.getByRole('button', { name: 'Add bucket override' }).click();
   await dialog.getByLabel('Bucket 1', { exact: true }).fill('demo-bucket');

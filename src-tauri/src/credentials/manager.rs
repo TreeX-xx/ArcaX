@@ -31,8 +31,16 @@ pub enum CredentialType {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Profile {
+    #[serde(default)]
+    pub provider: StorageProvider,
+    /// Kept only in secret storage; None preserves an omitted token on edits.
+    #[serde(default, skip_serializing)]
+    pub session_token: Option<String>,
+    /// Non-secret marker: a failed token read must never silently remove STS.
+    #[serde(default)]
+    pub has_session_token: bool,
     /// Missing on older profiles: retain provider-aware automatic addressing.
     #[serde(default)]
     pub addressing_style: AddressingStyle,
@@ -54,8 +62,36 @@ pub struct Profile {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+impl std::fmt::Debug for Profile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Profile")
+            .field("id", &self.id)
+            .field("provider", &self.provider)
+            .field("credentials", &"[REDACTED]")
+            .finish_non_exhaustive()
+    }
+}
+
 impl Profile {
     pub fn validate_connection(&self) -> Result<()> {
+        if let CredentialType::CustomEndpoint { endpoint_url, .. } = &self.credential_type {
+            if let Some((detected, _)) = crate::s3::client::endpoint_provider(endpoint_url) {
+                if self.provider != StorageProvider::Auto && self.provider != detected {
+                    return Err(AppError::ConfigError(
+                        "The endpoint does not match the selected storage provider.".into(),
+                    ));
+                }
+            }
+            if crate::s3::client::provider_for(self, endpoint_url) == StorageProvider::Obs
+                && url::Url::parse(&crate::s3::client::normalize_endpoint_url(endpoint_url))
+                    .map(|url| url.scheme() != "https")
+                    .unwrap_or(true)
+            {
+                return Err(AppError::ConfigError(
+                    "Huawei OBS connections require HTTPS.".into(),
+                ));
+            }
+        }
         if let Some(bucket) = &self.default_bucket {
             if bucket.is_empty()
                 || bucket.len() > 63
@@ -84,6 +120,9 @@ impl Profile {
     pub fn new(name: String, credential_type: CredentialType, region: Option<String>) -> Self {
         let now = chrono::Utc::now();
         Self {
+            provider: StorageProvider::Auto,
+            session_token: None,
+            has_session_token: false,
             addressing_style: AddressingStyle::Auto,
             default_bucket: None,
             public_urls: Default::default(),
@@ -97,6 +136,16 @@ impl Profile {
             updated_at: Some(now),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageProvider {
+    #[default]
+    Auto,
+    Cos,
+    Oss,
+    Obs,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -282,7 +331,7 @@ impl ProfileManager {
             .get(id)
             .cloned()
             .ok_or_else(|| AppError::ProfileNotFound(id.to_string()))?;
-        Ok(self.hydrate_profile(profile))
+        self.hydrate_profile(profile)
     }
 
     pub async fn add_profile(&mut self, mut profile: Profile) -> Result<Profile> {
@@ -302,6 +351,19 @@ impl ProfileManager {
         }
         let previous = self.data.clone();
         profile.secret_ref = Some(Uuid::new_v4().to_string());
+        profile.has_session_token = matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) && profile
+            .session_token
+            .as_deref()
+            .is_some_and(|v| !v.is_empty());
+        if !matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) {
+            profile.session_token = None;
+        }
         self.store_secret(&profile)?;
 
         // Set timestamps
@@ -324,13 +386,13 @@ impl ProfileManager {
             return Err(error);
         }
 
-        Ok(self.hydrate_profile(
+        self.hydrate_profile(
             self.data
                 .profiles
                 .get(&profile.id)
                 .cloned()
                 .ok_or_else(|| AppError::ProfileNotFound(profile.id.clone()))?,
-        ))
+        )
     }
 
     pub async fn update_profile(&mut self, id: &str, mut profile: Profile) -> Result<Profile> {
@@ -342,7 +404,17 @@ impl ProfileManager {
             .get(id)
             .cloned()
             .ok_or_else(|| AppError::ProfileNotFound(id.to_string()))?;
-        let hydrated_existing_profile = self.hydrate_profile(existing_profile.clone());
+        let mut existing_credentials = existing_profile.clone();
+        // Explicit replacement/clear can repair an unreadable saved token.
+        if profile.session_token.is_some() {
+            existing_credentials.session_token = profile.session_token.clone();
+        } else if !matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) {
+            existing_credentials.session_token = Some(String::new());
+        }
+        let hydrated_existing_profile = self.hydrate_profile(existing_credentials)?;
 
         if self
             .data
@@ -410,8 +482,24 @@ impl ProfileManager {
             _ => {}
         }
 
+        if profile.session_token.is_none() {
+            profile.session_token = hydrated_existing_profile.session_token;
+        }
         let previous = self.data.clone();
         profile.secret_ref = Some(Uuid::new_v4().to_string());
+        profile.has_session_token = matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) && profile
+            .session_token
+            .as_deref()
+            .is_some_and(|v| !v.is_empty());
+        if !matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) {
+            profile.session_token = None;
+        }
         self.store_secret(&profile)?;
 
         self.queue_secret_cleanup(&existing_profile);
@@ -423,7 +511,7 @@ impl ProfileManager {
         }
 
         self.cleanup_pending_secrets();
-        Ok(self.hydrate_profile(profile))
+        self.hydrate_profile(profile)
     }
 
     pub async fn delete_profile(&mut self, id: &str) -> Result<()> {
@@ -463,31 +551,49 @@ impl ProfileManager {
         match &self.data.active_profile_id {
             Some(id) => {
                 let profile = self.data.profiles.get(id).cloned();
-                Ok(profile.map(|p| self.hydrate_profile(p)))
+                profile.map(|p| self.hydrate_profile(p)).transpose()
             }
             None => Ok(None),
         }
     }
 
     /// Get a profile and populate its secret from the keychain if applicable
-    pub fn hydrate_profile(&self, mut profile: Profile) -> Profile {
-        let stored = self.data.profiles.get(&profile.id).unwrap_or(&profile);
-        if let Some(secret) = self.load_secret(stored).ok().flatten() {
+    pub fn hydrate_profile(&self, mut profile: Profile) -> Result<Profile> {
+        let stored = self
+            .data
+            .profiles
+            .get(&profile.id)
+            .unwrap_or(&profile)
+            .clone();
+        if let Some(secret) = self.load_secret(&stored).ok().flatten() {
             match &mut profile.credential_type {
                 CredentialType::Manual {
                     secret_access_key, ..
                 } => {
-                    *secret_access_key = secret;
+                    if secret_access_key.is_empty() {
+                        *secret_access_key = secret;
+                    }
                 }
                 CredentialType::CustomEndpoint {
                     secret_access_key, ..
                 } => {
-                    *secret_access_key = secret;
+                    if secret_access_key.is_empty() {
+                        *secret_access_key = secret;
+                    }
                 }
                 _ => {}
             }
         }
-        profile
+        if matches!(
+            profile.credential_type,
+            CredentialType::CustomEndpoint { .. }
+        ) && profile.session_token.is_none()
+            && stored.has_session_token
+        {
+            profile.session_token = Some(self.keychain.get(&format!("{}:session", stored.secret_ref.as_deref().unwrap_or(&stored.id)))
+                .map_err(|_| AppError::InvalidCredentials("The saved session token could not be read. Enter it again or clear it.".into()))?);
+        }
+        Ok(profile)
     }
 
     fn store_secret(&self, profile: &Profile) -> Result<()> {
@@ -507,6 +613,24 @@ impl ProfileManager {
                     profile.secret_ref.as_deref().unwrap_or(&profile.id),
                     secret_access_key,
                 )?;
+                if matches!(
+                    profile.credential_type,
+                    CredentialType::CustomEndpoint { .. }
+                ) {
+                    if let Some(token) = profile.session_token.as_deref().filter(|v| !v.is_empty())
+                    {
+                        if let Err(error) = self.keychain.store(
+                            &format!(
+                                "{}:session",
+                                profile.secret_ref.as_deref().unwrap_or(&profile.id)
+                            ),
+                            token,
+                        ) {
+                            self.remove_secret(profile);
+                            return Err(error);
+                        }
+                    }
+                }
             }
             _ => {}
         }
@@ -518,6 +642,10 @@ impl ProfileManager {
             profile.credential_type,
             CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. }
         ) {
+            self.data.pending_secret_deletions.push(format!(
+                "{}:session",
+                profile.secret_ref.as_deref().unwrap_or(&profile.id)
+            ));
             self.data.pending_secret_deletions.push(
                 profile
                     .secret_ref
@@ -547,6 +675,10 @@ impl ProfileManager {
     fn remove_secret(&self, profile: &Profile) {
         match &profile.credential_type {
             CredentialType::Manual { .. } | CredentialType::CustomEndpoint { .. } => {
+                let _ = self.keychain.delete(&format!(
+                    "{}:session",
+                    profile.secret_ref.as_deref().unwrap_or(&profile.id)
+                ));
                 if let Err(error) = self
                     .keychain
                     .delete(profile.secret_ref.as_deref().unwrap_or(&profile.id))
@@ -573,6 +705,151 @@ impl ProfileManager {
 mod tests {
     use super::{CredentialType, Profile, ProfileManager};
     use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn session_tokens_follow_secret_storage_updates_rollback_and_deletion() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        let mut profile = Profile::new(
+            "temporary".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: "https://obs.cn-north-4.myhuaweicloud.com".into(),
+                access_key_id: "test".into(),
+                secret_access_key: "secret".into(),
+            },
+            None,
+        );
+        profile.session_token = Some("private-token".into());
+        let saved = manager.add_profile(profile).await.unwrap();
+        let stored = std::fs::read_to_string(dir.path().join("profiles.json")).unwrap();
+        assert!(!stored.contains("private-token"));
+        assert!(!format!("{saved:?}").contains("private-token"));
+        assert!(saved.has_session_token);
+        assert!(!serde_json::to_string(&saved)
+            .unwrap()
+            .contains("private-token"));
+        // Reopen to exercise actual storage, rather than hydrated in-memory values.
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        let mut edit = manager.get_profile(&saved.id).await.unwrap();
+        assert_eq!(edit.session_token.as_deref(), Some("private-token"));
+        edit.session_token = None;
+        let preserved = manager.update_profile(&saved.id, edit).await.unwrap();
+        assert_eq!(preserved.session_token.as_deref(), Some("private-token"));
+        std::fs::rename(
+            dir.path().join("profiles.json"),
+            dir.path().join("saved.json"),
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("profiles.json")).unwrap();
+        let mut replacement = preserved.clone();
+        replacement.session_token = Some("replacement-token".into());
+        assert!(manager
+            .update_profile(&saved.id, replacement)
+            .await
+            .is_err());
+        let secrets = std::fs::read_to_string(dir.path().join("secrets.json")).unwrap();
+        assert!(secrets.contains("private-token"));
+        assert!(!secrets.contains("replacement-token"));
+        std::fs::remove_dir(dir.path().join("profiles.json")).unwrap();
+        std::fs::rename(
+            dir.path().join("saved.json"),
+            dir.path().join("profiles.json"),
+        )
+        .unwrap();
+        let mut clear = preserved;
+        clear.session_token = Some(String::new());
+        manager.update_profile(&saved.id, clear).await.unwrap();
+        assert!(
+            !manager
+                .get_profile(&saved.id)
+                .await
+                .unwrap()
+                .has_session_token
+        );
+        assert!(manager
+            .get_profile(&saved.id)
+            .await
+            .unwrap()
+            .session_token
+            .as_deref()
+            .is_none_or(str::is_empty));
+        manager.delete_profile(&saved.id).await.unwrap();
+        assert!(manager.data.pending_secret_deletions.is_empty());
+        let secrets: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("secrets.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(secrets["secrets"].as_object().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn unreadable_session_token_fails_closed_and_explicit_clear_repairs_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        let mut profile = Profile::new(
+            "temporary".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: "https://obs.cn-north-4.myhuaweicloud.com".into(),
+                access_key_id: "test".into(),
+                secret_access_key: "secret".into(),
+            },
+            None,
+        );
+        profile.session_token = Some("private-token".into());
+        let saved = manager.add_profile(profile).await.unwrap();
+        manager
+            .keychain
+            .delete(&format!("{}:session", saved.secret_ref.as_deref().unwrap()))
+            .unwrap();
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        assert!(manager.get_profile(&saved.id).await.is_err());
+        let mut edit = manager.list_profiles().await.unwrap().remove(0);
+        assert!(manager
+            .update_profile(&saved.id, edit.clone())
+            .await
+            .is_err());
+        edit.session_token = Some(String::new());
+        let repaired = manager.update_profile(&saved.id, edit).await.unwrap();
+        assert!(!repaired.has_session_token);
+        let mut temporary = repaired;
+        temporary.session_token = Some("new-token".into());
+        let saved = manager.update_profile(&saved.id, temporary).await.unwrap();
+        manager
+            .keychain
+            .delete(&format!("{}:session", saved.secret_ref.as_deref().unwrap()))
+            .unwrap();
+        let mut manager = ProfileManager::new(dir.path().to_path_buf(), true).unwrap();
+        let mut edit = manager.list_profiles().await.unwrap().remove(0);
+        edit.credential_type = CredentialType::Manual {
+            access_key_id: "test".into(),
+            secret_access_key: String::new(),
+        };
+        let switched = manager.update_profile(&saved.id, edit).await.unwrap();
+        assert!(!switched.has_session_token);
+        assert!(switched.session_token.is_none());
+    }
+
+    #[test]
+    fn provider_validation_rejects_mismatch_and_obs_http() {
+        let mut profile = Profile::new(
+            "test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: "http://obs.cn-north-4.myhuaweicloud.com".into(),
+                access_key_id: "test".into(),
+                secret_access_key: "secret".into(),
+            },
+            None,
+        );
+        assert!(profile.validate_connection().is_err());
+        profile.credential_type = CredentialType::CustomEndpoint {
+            endpoint_url: "HTTPS://obs.cn-north-4.myhuaweicloud.com".into(),
+            access_key_id: "test".into(),
+            secret_access_key: "secret".into(),
+        };
+        assert!(profile.validate_connection().is_ok());
+        profile.provider = super::StorageProvider::Oss;
+        assert!(profile.validate_connection().is_err());
+    }
 
     #[tokio::test]
     async fn failed_metadata_commit_preserves_selection_profile_and_secret() {
@@ -790,6 +1067,9 @@ mod tests {
         profiles.insert(
             "legacy-key".to_string(),
             Profile {
+                provider: Default::default(),
+                session_token: None,
+                has_session_token: false,
                 addressing_style: Default::default(),
                 default_bucket: None,
                 public_urls: Default::default(),

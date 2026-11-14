@@ -112,19 +112,29 @@ pub fn build(profile: &Profile, bucket: &str, region: Option<&str>, key: &str) -
 mod tests {
     #[test]
     fn cos_public_urls_match_virtual_hosted_requests() {
-        let profile = crate::credentials::Profile::new(
-            "COS".into(),
-            crate::credentials::CredentialType::CustomEndpoint {
-                endpoint_url: "https://cos.ap-guangzhou.myqcloud.com".into(),
-                access_key_id: "test".into(),
-                secret_access_key: "test-secret".into(),
-            },
-            None,
-        );
-        assert_eq!(
-            super::build(&profile, "test-1250000000", None, "folder/a b.txt").unwrap(),
-            "https://test-1250000000.cos.ap-guangzhou.myqcloud.com/folder/a%20b.txt"
-        );
+        for endpoint in [
+            "https://cos.ap-guangzhou.myqcloud.com",
+            "https://s3.oss-cn-hangzhou.aliyuncs.com",
+            "https://oss-cn-hangzhou.aliyuncs.com",
+            "https://obs.cn-north-4.myhuaweicloud.com",
+        ] {
+            let profile = crate::credentials::Profile::new(
+                "provider".into(),
+                crate::credentials::CredentialType::CustomEndpoint {
+                    endpoint_url: endpoint.into(),
+                    access_key_id: "test".into(),
+                    secret_access_key: "test-secret".into(),
+                },
+                None,
+            );
+            assert_eq!(
+                super::build(&profile, "test-1250000000", None, "folder/a b.txt").unwrap(),
+                format!(
+                    "https://test-1250000000.{}/folder/a%20b.txt",
+                    endpoint.trim_start_matches("https://")
+                )
+            );
+        }
     }
     use super::*;
     #[test]

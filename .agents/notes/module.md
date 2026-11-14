@@ -5,7 +5,7 @@
   "kind": "module",
   "lifecycle": "accepted",
   "created": "2026-10-28",
-  "updated": "2026-11-14T02:06:29Z",
+  "updated": "2026-11-14T03:22:31Z",
   "role": "project",
   "moduleState": "implemented"
 }
@@ -34,4 +34,4 @@ S3-compatible profiles support provider-aware addressing and direct target-bucke
 - [File drag and drop](file-drag-and-drop.md) — planned OS drop upload and native drag-out design.
 - [Internationalization](i18n.md) — English/Chinese switching, message catalog and covered surfaces.
 - [Release and automatic updates](release-process.md) — local build, GitHub Releases and the deferred updater direction.
-- [S3 connections](s3-connections.md) — COS addressing, literal OBS configuration import and target-bucket checks.
+- [S3 connections](s3-connections.md) — COS/OSS/OBS connection rules, literal configuration import, temporary credentials and target-bucket checks.

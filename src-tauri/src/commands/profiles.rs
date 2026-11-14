@@ -89,18 +89,10 @@ pub async fn test_connection(
     // Hydrate profile secrets from keychain if they are empty
     {
         let manager = state.read().await;
-        let needs_hydration = match &profile.credential_type {
-            crate::credentials::CredentialType::Manual {
-                secret_access_key, ..
-            } => secret_access_key.is_empty(),
-            crate::credentials::CredentialType::CustomEndpoint {
-                secret_access_key, ..
-            } => secret_access_key.is_empty(),
-            _ => false,
-        };
-
-        if needs_hydration && !profile.id.is_empty() {
-            profile = manager.hydrate_profile(profile);
+        if !profile.id.is_empty() {
+            profile = manager
+                .hydrate_profile(profile)
+                .map_err(|e| e.to_string())?;
         }
     }
 

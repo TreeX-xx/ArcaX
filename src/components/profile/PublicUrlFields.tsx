@@ -22,12 +22,9 @@ export function publicUrlSettings(form: PublicUrlForm): PublicUrlSettings {
   }
   return { base_url: base, include_bucket: form.includeBucket, bucket_overrides: overrides };
 }
-export default function PublicUrlFields({ value, onChange }: { value: PublicUrlForm; onChange: (value: PublicUrlForm) => void }) {
+export default function PublicUrlFields({ value, onChange, embedded = false }: { embedded?: boolean; value: PublicUrlForm; onChange: (value: PublicUrlForm) => void }) {
   const { t } = useI18n();
-  return <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}>
-    <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2" fontWeight={600}>{t('Public URLs and CDN (optional)')}</Typography></AccordionSummary>
-    <AccordionDetails sx={{ px: 0 }}>
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+  const fields = <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Typography variant="body2" color="text.secondary">{t('Used only when copying public links. This does not make files public or change S3 permissions. Leave blank to use the S3 endpoint.')}</Typography>
         <TextField size="small" fullWidth label={t('Public / CDN base URL')} placeholder="https://cdn.example.com/assets" value={value.base} onChange={e => onChange({ ...value, base: e.target.value })} />
         <FormControlLabel control={<Checkbox size="small" checked={value.includeBucket} onChange={(_, checked) => onChange({ ...value, includeBucket: checked })} />} label={t('Append the bucket name before the file path')} />
@@ -38,7 +35,10 @@ export default function PublicUrlFields({ value, onChange }: { value: PublicUrlF
           <IconButton size="small" aria-label={t('Remove bucket override {index}', { index: index + 1 })} onClick={() => onChange({ ...value, overrides: value.overrides.filter((_, i) => i !== index) })}><Close fontSize="small" /></IconButton>
         </Box>)}
         <Button size="small" sx={[urlActionStyles, { alignSelf: 'flex-start' }]} disabled={value.overrides.length >= 100} onClick={() => onChange({ ...value, overrides: [...value.overrides, { bucket: '', url: '' }] })}>{t('Add bucket override')}</Button>
-      </Box>
-    </AccordionDetails>
+      </Box>;
+  if (embedded) return fields;
+  return <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}>
+    <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="body2" fontWeight={600}>{t('Public URLs and CDN (optional)')}</Typography></AccordionSummary>
+    <AccordionDetails sx={{ px: 0 }}>{fields}</AccordionDetails>
   </Accordion>;
 }

@@ -1,4 +1,4 @@
-use crate::credentials::{AddressingStyle, CredentialType, Profile};
+use crate::credentials::{AddressingStyle, CredentialType, Profile, StorageProvider};
 use crate::error::{AppError, Result};
 use aws_config::Region;
 use aws_sdk_s3::config::{RequestChecksumCalculation, ResponseChecksumValidation};
@@ -17,18 +17,41 @@ const MAX_SORTED_CACHE_ITEMS: usize = 100_000;
 /// without a scheme, causing the AWS SDK to fail with "dispatch failure".
 pub(crate) fn normalize_endpoint_url(url: &str) -> String {
     let trimmed = url.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    if trimmed.to_ascii_lowercase().starts_with("http://")
+        || trimmed.to_ascii_lowercase().starts_with("https://")
+    {
         trimmed.to_string()
     } else {
         format!("https://{}", trimmed)
     }
 }
 
-/// Match the regional COS service host exactly; lookalike domains stay generic.
-pub(crate) fn cos_region(endpoint: &str) -> Option<String> {
+// Compatibility rules: note://f02ec38f-b877-41c0-84ae-af5efe88aff5/6724b57d-5a29-49c6-b46a-8718aaa83723
+pub(crate) fn endpoint_provider(endpoint: &str) -> Option<(StorageProvider, String)> {
     let url = url::Url::parse(&normalize_endpoint_url(endpoint)).ok()?;
     let host = url.host_str()?;
-    let region = host.strip_prefix("cos.")?.strip_suffix(".myqcloud.com")?;
+    let (provider, region) = if let Some(value) = host
+        .strip_prefix("cos.")
+        .and_then(|h| h.strip_suffix(".myqcloud.com"))
+    {
+        (StorageProvider::Cos, value)
+    } else if let Some(value) = host
+        .strip_prefix("s3.oss-")
+        .or_else(|| host.strip_prefix("oss-"))
+        .and_then(|h| h.strip_suffix(".aliyuncs.com"))
+    {
+        (
+            StorageProvider::Oss,
+            value.strip_suffix("-internal").unwrap_or(value),
+        )
+    } else if let Some(value) = host
+        .strip_prefix("obs.")
+        .and_then(|h| h.strip_suffix(".myhuaweicloud.com"))
+    {
+        (StorageProvider::Obs, value)
+    } else {
+        return None;
+    };
     if region.is_empty()
         || !region
             .bytes()
@@ -36,12 +59,27 @@ pub(crate) fn cos_region(endpoint: &str) -> Option<String> {
     {
         return None;
     }
-    Some(region.to_string())
+    Some((provider, region.to_string()))
+}
+
+#[cfg(test)]
+pub(crate) fn cos_region(endpoint: &str) -> Option<String> {
+    endpoint_provider(endpoint)
+        .filter(|v| v.0 == StorageProvider::Cos)
+        .map(|v| v.1)
+}
+
+pub(crate) fn provider_for(profile: &Profile, endpoint: &str) -> StorageProvider {
+    if profile.provider != StorageProvider::Auto {
+        profile.provider
+    } else {
+        endpoint_provider(endpoint).map(|v| v.0).unwrap_or_default()
+    }
 }
 
 pub(crate) fn profile_region(profile: &Profile) -> String {
     if let CredentialType::CustomEndpoint { endpoint_url, .. } = &profile.credential_type {
-        if let Some(region) = cos_region(endpoint_url) {
+        if let Some((_, region)) = endpoint_provider(endpoint_url) {
             return region;
         }
     }
@@ -50,17 +88,41 @@ pub(crate) fn profile_region(profile: &Profile) -> String {
 
 pub(crate) fn use_path_style(profile: &Profile, endpoint: &str) -> bool {
     match profile.addressing_style {
-        AddressingStyle::Auto => cos_region(endpoint).is_none(),
+        AddressingStyle::Auto => provider_for(profile, endpoint) == StorageProvider::Auto,
         AddressingStyle::Virtual => false,
         AddressingStyle::Path => true,
     }
 }
 
 pub(crate) fn connection_error(code: &str, message: &str) -> String {
+    if code == "InvalidSecurityToken" || code == "ExpiredToken" {
+        return "The temporary credentials are invalid or expired. Update the access keys and session token.".into();
+    }
+    if message.contains("0002-00000033") || message.contains("0002-00000031") {
+        return "S3 authentication is not enabled for this OSS account. Contact Alibaba Cloud support.".into();
+    }
     if code == "PathStyleDomainForbidden" {
         return "This bucket requires virtual-hosted addressing. Select Auto or Virtual hosted in the connection settings.".into();
     }
     format!("Connection failed: {code}: {message}")
+}
+
+#[derive(Debug)]
+struct ObsPayloadSigning;
+impl aws_sdk_s3::config::Intercept for ObsPayloadSigning {
+    fn name(&self) -> &'static str {
+        "ObsPayloadSigning"
+    }
+    fn modify_before_signing(
+        &self,
+        _context: &mut aws_sdk_s3::config::interceptors::BeforeTransmitInterceptorContextMut<'_>,
+        _components: &aws_smithy_runtime_api::client::runtime_components::RuntimeComponents,
+        cfg: &mut aws_smithy_types::config_bag::ConfigBag,
+    ) -> std::result::Result<(), aws_smithy_runtime_api::box_error::BoxError> {
+        cfg.interceptor_state()
+            .store_put(aws_runtime::auth::PayloadSigningOverride::UnsignedPayload);
+        Ok(())
+    }
 }
 
 fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws_sdk_s3::Config {
@@ -78,8 +140,22 @@ fn build_s3_config(sdk_config: &aws_config::SdkConfig, profile: &Profile) -> aws
         builder = builder
             .force_path_style(use_path_style(profile, endpoint))
             .response_checksum_validation(ResponseChecksumValidation::WhenRequired);
-        if let Some(region) = cos_region(endpoint) {
+        if let Some((provider, region)) = endpoint_provider(endpoint) {
             builder = builder.region(Region::new(region));
+            // OSS native endpoints do not accept AWS authentication. Route the
+            // SDK to the official S3 endpoint; keep the entered/public URL intact.
+            if provider == StorageProvider::Oss {
+                let mut url = url::Url::parse(&normalize_endpoint_url(endpoint))
+                    .expect("recognized endpoint");
+                if let Some(host) = url.host_str().filter(|h| h.starts_with("oss-")) {
+                    let host = format!("s3.{host}");
+                    url.set_host(Some(&host)).expect("valid OSS host");
+                    builder = builder.endpoint_url(url.as_str().trim_end_matches('/'));
+                }
+            }
+        }
+        if provider_for(profile, endpoint) == StorageProvider::Obs {
+            builder = builder.interceptor(ObsPayloadSigning);
         }
     }
 
@@ -136,7 +212,7 @@ pub(crate) async fn load_sdk_config(
             let creds = aws_credential_types::Credentials::new(
                 access_key_id,
                 secret_access_key,
-                None,
+                profile.session_token.clone().filter(|v| !v.is_empty()),
                 None,
                 "custom_endpoint",
             );
@@ -160,6 +236,7 @@ pub(crate) async fn build_s3_client(
     profile: &Profile,
     override_region: Option<String>,
 ) -> Result<Client> {
+    profile.validate_connection()?;
     let sdk_config = load_sdk_config(profile, override_region).await;
     Ok(client_from_sdk_config(&sdk_config, profile))
 }
@@ -480,9 +557,80 @@ mod tests {
     use aws_sdk_s3::presigning::PresigningConfig;
     use std::time::Duration;
 
+    #[test]
+    fn provider_rules_match_frontend_fixtures() {
+        let entries: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../../tests/fixtures/s3-providers.json"))
+                .unwrap();
+        for entry in entries {
+            let actual = super::endpoint_provider(entry["endpoint"].as_str().unwrap());
+            if entry["provider"].is_null() {
+                assert!(actual.is_none(), "{entry}");
+            } else {
+                let (provider, region) = actual.unwrap();
+                assert_eq!(serde_json::to_value(provider).unwrap(), entry["provider"]);
+                assert_eq!(region, entry["region"].as_str().unwrap());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn obs_put_payload_and_temporary_token_are_signed_consistently() {
+        use crate::commands::test_s3::{response, scripted_endpoint};
+        let (endpoint, server) = scripted_endpoint(vec![response(200, "", "")]).await;
+        let mut profile = Profile::new(
+            "OBS test".into(),
+            CredentialType::CustomEndpoint {
+                endpoint_url: endpoint,
+                access_key_id: "test".into(),
+                secret_access_key: "secret".into(),
+            },
+            Some("cn-north-4".into()),
+        );
+        // Local HTTP capture only: production validation requires HTTPS for OBS.
+        profile.provider = crate::credentials::StorageProvider::Obs;
+        profile.addressing_style = crate::credentials::AddressingStyle::Path;
+        profile.session_token = Some("session-token".into());
+        let config = super::load_sdk_config(&profile, None).await;
+        let client = super::client_from_sdk_config(&config, &profile);
+        client
+            .put_object()
+            .bucket("target")
+            .key("test.txt")
+            .body(aws_smithy_types::byte_stream::ByteStream::from_static(
+                b"test-body",
+            ))
+            .send()
+            .await
+            .unwrap();
+        let requests = server.await.unwrap();
+        let request = requests[0].to_ascii_lowercase();
+        assert!(
+            request.contains("x-amz-content-sha256: unsigned-payload"),
+            "{request}"
+        );
+        assert!(request.contains("x-amz-security-token: session-token"));
+        assert!(request.contains("test-body"));
+    }
+
     #[tokio::test]
     async fn cos_presigned_requests_use_virtual_host_and_endpoint_region() {
         for (style, endpoint, prefix) in [
+            (
+                crate::credentials::AddressingStyle::Auto,
+                "https://oss-cn-hangzhou.aliyuncs.com",
+                "https://test-1250000000.s3.oss-cn-hangzhou.aliyuncs.com/folder/file.txt?",
+            ),
+            (
+                crate::credentials::AddressingStyle::Auto,
+                "https://s3.oss-cn-hangzhou.aliyuncs.com",
+                "https://test-1250000000.s3.oss-cn-hangzhou.aliyuncs.com/folder/file.txt?",
+            ),
+            (
+                crate::credentials::AddressingStyle::Auto,
+                "https://obs.cn-north-4.myhuaweicloud.com",
+                "https://test-1250000000.obs.cn-north-4.myhuaweicloud.com/folder/file.txt?",
+            ),
             (
                 crate::credentials::AddressingStyle::Auto,
                 "https://cos.ap-guangzhou.myqcloud.com",
@@ -538,8 +686,14 @@ mod tests {
                 .await
                 .unwrap();
             assert!(request.uri().starts_with(prefix), "{}", request.uri());
-            if endpoint.contains("myqcloud") {
-                assert!(request.uri().contains("ap-guangzhou"));
+            if let Some((_, region)) = super::endpoint_provider(endpoint) {
+                assert!(
+                    request
+                        .uri()
+                        .contains(&format!("%2F{region}%2Fs3%2Faws4_request")),
+                    "{}",
+                    request.uri()
+                );
                 assert!(!request.uri().contains("us-east-1"));
             }
         }

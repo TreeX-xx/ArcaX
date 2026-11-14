@@ -21,18 +21,43 @@ local installers. Local Cargo mirror settings are ignored by Git.
 
 ## S3-compatible connections
 
-Choose **Custom S3 / Compatibility Mode** to enter an endpoint and access keys.
-The paste field accepts literal `OBS_ENDPOINT_URL`, `OBS_ACCESS_KEY`,
-`OBS_SECRET_KEY` and optional `OBS_BUCKET` entries in YAML (`KEY: "value"`) or
-env (`KEY=value`) form. It fills the form and immediately clears the pasted
-text; imported secrets use the existing credential storage. `OBS_*` process
-environment variables are not loaded automatically.
+Choose **Custom S3 / Compatibility Mode** and select Auto / Other S3, Tencent
+COS, Alibaba OSS or Huawei OBS. The provider selector fills an empty endpoint;
+editing its region updates a generated endpoint. Existing manual endpoints are
+preserved. Exact regional service hosts supply the signing region and use
+virtual-hosted addressing. Unknown custom endpoints retain path style by default.
+Older profiles default to Auto; AWS credential sources retain their existing flow.
 
-For `https://cos.ap-guangzhou.myqcloud.com`, Auto uses virtual-hosted requests
-(`https://bucket.cos.ap-guangzhou.myqcloud.com`) and derives `ap-guangzhou`
-from the endpoint. Existing COS profiles get this behavior without being
-recreated. Other custom endpoints retain path-style addressing by default;
-the addressing selector allows an explicit override.
+| Provider | Recommended endpoint | Local connection rules | Cloud acceptance |
+| --- | --- | --- | --- |
+| Tencent COS | `https://cos.ap-guangzhou.myqcloud.com` | Endpoint region, virtual host | Not run for 0.0.7 |
+| Alibaba OSS | `https://s3.oss-cn-hangzhou.aliyuncs.com` | Endpoint region, virtual host; native `oss-` hosts route SDK requests through `s3.oss-` | Not run for 0.0.7 |
+| Huawei OBS | `https://obs.cn-north-4.myhuaweicloud.com` | Endpoint region, virtual host, HTTPS and V4 unsigned payload | Not run for 0.0.7 |
+
+OSS accounts may require S3 authentication to be enabled. See the
+[official AWS SDK setup](https://help.aliyun.com/zh/oss/developer-reference/use-aws-sdks-to-access-oss)
+and [V4 account prerequisite](https://help.aliyun.com/en/oss/user-guide/0002-00000033).
+OBS payload and checksum settings follow the
+[official V4 guidance](https://support.huaweicloud.com/obs_faq/obs_faq_0274.html).
+Custom/internal/accelerated domains outside the recognized regional formats need
+manual settings; no extra provider presets are included in this version.
+
+**Paste connection configuration** accepts literal YAML (`KEY: "value"`) or env
+(`KEY=value`) fields, with a 32 KiB limit. It fills the form and clears the raw
+paste immediately. Supported groups are `OBS_ENDPOINT_URL` / `OBS_ACCESS_KEY` /
+`OBS_SECRET_KEY`, `OSS_ENDPOINT` / `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`,
+`COS_ENDPOINT` / `COS_SECRET_ID` / `COS_SECRET_KEY`, or `S3_ENDPOINT` (also
+`S3_ENDPOINT_URL`) with `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Optional
+bucket fields are `OBS_BUCKET`, `OSS_BUCKET`, `COS_BUCKET` or `S3_BUCKET`;
+optional token fields are `OBS_SECURITY_TOKEN`, `OSS_SECURITY_TOKEN`,
+`COS_SESSION_TOKEN` or `AWS_SESSION_TOKEN`. Conflicting aliases are rejected.
+Expressions are never executed; vendor process-environment discovery is not added.
+
+**Advanced settings** contains addressing overrides, an optional session token,
+and public/CDN URL configuration. Tokens use the same secret storage as access
+secrets and never appear in profile metadata or API responses. Editing preserves
+an omitted token; enter a replacement or use **Clear saved token**. Expired tokens
+must be replaced manually. There is no automatic STS issuance or renewal.
 
 The optional **Target bucket** is saved with the connection. When present,
 bucket discovery shows that bucket directly and **Test Connection** makes a

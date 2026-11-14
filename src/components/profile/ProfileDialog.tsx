@@ -4,6 +4,9 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { useTheme, alpha } from '@mui/material';
 import { useSettingsStore } from '@/store/settingsStore';
 import {
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
   Alert,
   Box,
   Button,
@@ -28,6 +31,7 @@ import {
   Chip,
 } from '@mui/material';
 import {
+  ExpandMore as ExpandMoreIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
@@ -47,7 +51,7 @@ import { BaseDialog } from '../common/BaseDialog';
 import PublicUrlFields, { emptyPublicUrlForm, publicUrlSettings, PublicUrlForm } from './PublicUrlFields';
 import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { useI18n } from '@/lib/i18n';
-import { cosRegion, parseObsConfig } from '@/lib/s3Endpoint';
+import { endpointInfo, providerEndpoint, parseConnectionConfig, type StorageProvider } from '@/lib/s3Endpoint';
 
 const AWS_REGIONS = [
   'auto',
@@ -72,6 +76,8 @@ const AWS_REGIONS = [
 type CredentialTypeKey = 'Environment' | 'SharedConfig' | 'Manual' | 'CustomEndpoint';
 
 type ProfileFormData = {
+  provider: StorageProvider;
+  sessionToken?: string;
   addressingStyle: 'auto' | 'virtual' | 'path';
   defaultBucket: string;
   publicUrls: PublicUrlForm;
@@ -104,6 +110,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   
   const [mode, setMode] = useState<'list' | 'add' | 'edit'>('list');
   const [formData, setFormData] = useState<ProfileFormData>({
+    provider: 'auto',
+    sessionToken: undefined,
     addressingStyle: 'auto',
     defaultBucket: '',
     publicUrls: emptyPublicUrlForm(),
@@ -115,6 +123,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     secretAccessKey: '',
     endpointUrl: '',
   });
+  const activeProvider = formData.provider === 'auto' ? endpointInfo(formData.endpointUrl)?.provider : formData.provider;
+  const isCos = formData.credentialType === 'CustomEndpoint' && activeProvider === 'cos';
   const [testResult, setTestResult] = useState<TestConnectionResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -176,16 +186,20 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   }, [open, mode, editProfile, formData.name, t]);
 
   const updateField = <K extends keyof ProfileFormData>(field: K, value: ProfileFormData[K]) => {
-    const region = field === 'endpointUrl' ? cosRegion(String(value)) : undefined;
+    const region = field === 'endpointUrl' ? endpointInfo(String(value))?.region : undefined;
     setFormData((prev) => ({
       ...prev,
       [field]: value,
       ...(region ? { region } : {}),
+      ...(field === 'region' && prev.provider !== 'auto' && (!prev.endpointUrl || prev.endpointUrl === providerEndpoint(prev.provider, prev.region))
+        ? { endpointUrl: providerEndpoint(prev.provider, String(value)) } : {}),
     }));
   };
 
   const resetForm = useCallback(() => {
     setFormData({
+      provider: 'auto',
+      sessionToken: undefined,
       addressingStyle: 'auto',
       defaultBucket: '',
       publicUrls: emptyPublicUrlForm(),
@@ -240,12 +254,14 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     const endpointUrl = cred.type === 'CustomEndpoint' ? cred.endpoint_url : '';
 
     setFormData({
+      provider: profile.provider || 'auto',
+      sessionToken: undefined,
       addressingStyle: profile.addressing_style || 'auto',
       defaultBucket: profile.default_bucket || '',
       publicUrls: profile.public_urls ? { base: profile.public_urls.base_url, includeBucket: profile.public_urls.include_bucket, overrides: Object.entries(profile.public_urls.bucket_overrides).map(([bucket, url]) => ({ bucket, url })) } : emptyPublicUrlForm(),
       name: profile.name,
       credentialType: cred.type as CredentialTypeKey,
-      region: cosRegion(endpointUrl) || profile.region || 'us-east-1',
+      region: endpointInfo(endpointUrl)?.region || profile.region || 'us-east-1',
       profileName: cred.type === 'SharedConfig' ? (cred.profile_name || 'default') : 'default',
       accessKeyId: 'access_key_id' in cred ? cred.access_key_id : '',
       secretAccessKey: 'secret_access_key' in cred ? cred.secret_access_key : '',
@@ -254,7 +270,7 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
   };
 
   const handleCredentialTypeChange = (credentialType: CredentialTypeKey) => {
-    const region = credentialType === 'CustomEndpoint' ? cosRegion(formData.endpointUrl) : undefined;
+    const region = credentialType === 'CustomEndpoint' ? endpointInfo(formData.endpointUrl)?.region : undefined;
     setFormData(prev => ({ ...prev, credentialType, ...(region ? { region } : {}) }));
   };
 
@@ -303,6 +319,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     
     try {
       const profile: Partial<Profile> = {
+        provider: formData.credentialType === 'CustomEndpoint' ? formData.provider : 'auto',
+        session_token: formData.credentialType === 'CustomEndpoint' ? formData.sessionToken : null,
         addressing_style: formData.addressingStyle,
         default_bucket: formData.defaultBucket.trim() || null,
         id: selectedProfile?.id || editProfile?.id || '',
@@ -359,6 +377,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
     
     try {
       const profileData: Partial<Profile> = {
+        provider: formData.credentialType === 'CustomEndpoint' ? formData.provider : 'auto',
+        session_token: formData.credentialType === 'CustomEndpoint' ? formData.sessionToken : null,
         addressing_style: formData.addressingStyle,
         default_bucket: formData.defaultBucket.trim() || null,
         name: formData.name,
@@ -747,19 +767,35 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         {(formData.credentialType === 'Manual' || formData.credentialType === 'CustomEndpoint') && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, p: 3, borderRadius: 1.5, border: '1px dashed', borderColor: 'divider', bgcolor: 'background.default' }}>
                 {formData.credentialType === 'CustomEndpoint' && (<>
+                  <FormControl fullWidth>
+                    <InputLabel id="storage-provider-label">{t('Storage provider')}</InputLabel>
+                    <Select labelId="storage-provider-label" label={t('Storage provider')} value={formData.provider} onChange={e => {
+                      const provider = e.target.value as StorageProvider;
+                      setFormData(prev => {
+                        const canFill = !prev.endpointUrl || (prev.provider !== 'auto' && prev.endpointUrl === providerEndpoint(prev.provider, prev.region));
+                        const region = canFill && provider !== 'auto' ? { cos: 'ap-guangzhou', oss: 'cn-hangzhou', obs: 'cn-north-4' }[provider] : prev.region;
+                        return { ...prev, provider, region, endpointUrl: canFill && provider !== 'auto' ? providerEndpoint(provider, region) : prev.endpointUrl };
+                      });
+                    }}>
+                      <MenuItem value="auto">{t('Auto / Other S3')}</MenuItem>
+                      <MenuItem value="cos">{t('Tencent COS')}</MenuItem>
+                      <MenuItem value="oss">{t('Alibaba OSS')}</MenuItem>
+                      <MenuItem value="obs">{t('Huawei OBS')}</MenuItem>
+                    </Select>
+                  </FormControl>
                   <TextField
-                    label={t('Paste OBS configuration')}
+                    label={t('Paste connection configuration')}
                     value=""
                     onChange={() => {}}
                     placeholder="OBS_ENDPOINT_URL: …"
-                    helperText={t('Paste OBS_* YAML or env fields to fill this form. The pasted text is cleared immediately.')}
+                    helperText={t('Paste YAML or env fields to fill this form. The pasted text is cleared immediately.')}
                     onPaste={(event) => {
                       event.preventDefault();
                       try {
-                        const imported = parseObsConfig(event.clipboardData.getData('text'));
-                        setFormData(prev => ({ ...prev, ...imported, addressingStyle: 'auto', region: cosRegion(imported.endpointUrl) || prev.region }));
+                        const imported = parseConnectionConfig(event.clipboardData.getData('text'));
+                        setFormData(prev => ({ ...prev, ...imported, provider: 'auto', sessionToken: imported.sessionToken || '', addressingStyle: 'auto', region: endpointInfo(imported.endpointUrl)?.region || prev.region }));
                         setError(null);
-                      } catch (err) { setError(t(err instanceof Error ? err.message : 'Invalid OBS configuration. Paste the OBS endpoint, access key, secret key and optional bucket fields.')); }
+                      } catch (err) { setError(t(err instanceof Error ? err.message : 'Invalid connection configuration. Include an endpoint, access key and secret key.')); }
                     }}
                     fullWidth
                     slotProps={{ htmlInput: { autoComplete: 'off' } }}
@@ -770,27 +806,20 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                     onChange={(e) => updateField('endpointUrl', e.target.value)}
                     fullWidth
                     placeholder="https://cos.ap-guangzhou.myqcloud.com"
-                    helperText={cosRegion(formData.endpointUrl) ? t('Tencent COS detected. Region is read from the endpoint; Auto uses virtual-hosted addressing.') : undefined}
+                    helperText={endpointInfo(formData.endpointUrl) ? t('Region is read from the endpoint. Auto uses virtual-hosted addressing.') : undefined}
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
                   />
-                  <FormControl fullWidth>
-                    <InputLabel id="addressing-style-label">{t('Addressing style')}</InputLabel>
-                    <Select labelId="addressing-style-label" label={t('Addressing style')} value={formData.addressingStyle} onChange={e => updateField('addressingStyle', e.target.value as ProfileFormData['addressingStyle'])}>
-                      <MenuItem value="auto">{t('Auto (recommended)')}</MenuItem>
-                      <MenuItem value="virtual">{t('Virtual hosted (bucket.endpoint)')}</MenuItem>
-                      <MenuItem value="path">{t('Path style (endpoint/bucket)')}</MenuItem>
-                    </Select>
-                  </FormControl>
+
                 </>)}
                 <TextField
-                    label={t('Access Key ID')}
+                    label={t(isCos ? 'Secret ID' : 'Access Key ID')}
                     value={formData.accessKeyId}
                     onChange={(e) => updateField('accessKeyId', e.target.value)}
                     fullWidth
                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, bgcolor: 'background.paper', fontWeight: 600 } }}
                 />
                 <TextField
-                    label={t('Secret Access Key')}
+                    label={t(isCos ? 'Secret Key' : 'Secret Access Key')}
                     type="password"
                     value={formData.secretAccessKey}
                     onChange={(e) => updateField('secretAccessKey', e.target.value)}
@@ -802,8 +831,8 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
         
         <Autocomplete
           freeSolo
-          options={AWS_REGIONS}
-          disabled={formData.credentialType === 'CustomEndpoint' && !!cosRegion(formData.endpointUrl)}
+          options={formData.credentialType === 'CustomEndpoint' && activeProvider && activeProvider !== 'auto' ? [] : AWS_REGIONS}
+          disabled={formData.credentialType === 'CustomEndpoint' && !!endpointInfo(formData.endpointUrl) && formData.endpointUrl !== providerEndpoint(formData.provider, formData.region)}
           value={formData.region}
           onChange={(_, value) => updateField('region', value || '')}
           onInputChange={(_, value) => updateField('region', value)}
@@ -829,7 +858,24 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
           fullWidth
         />
         
-        <PublicUrlFields value={formData.publicUrls} onChange={value => updateField('publicUrls', value)} />
+        <Accordion disableGutters elevation={0} sx={{ bgcolor: 'transparent', '&:before': { display: 'none' } }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}><Typography variant="body2" fontWeight={600}>{t('Advanced settings')}</Typography></AccordionSummary>
+          <AccordionDetails sx={{ px: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {formData.credentialType === 'CustomEndpoint' && <>
+                  <FormControl fullWidth>
+                    <InputLabel id="addressing-style-label">{t('Addressing style')}</InputLabel>
+                    <Select labelId="addressing-style-label" label={t('Addressing style')} value={formData.addressingStyle} onChange={e => updateField('addressingStyle', e.target.value as ProfileFormData['addressingStyle'])}>
+                      <MenuItem value="auto">{t('Auto (recommended)')}</MenuItem>
+                      <MenuItem value="virtual">{t('Virtual hosted (bucket.endpoint)')}</MenuItem>
+                      <MenuItem value="path">{t('Path style (endpoint/bucket)')}</MenuItem>
+                    </Select>
+                  </FormControl>
+              <TextField label={t('Session token (optional)')} type="password" fullWidth value={formData.sessionToken ?? ''} onChange={e => updateField('sessionToken', e.target.value)} helperText={t('Leave blank to keep a saved token. Enter a new token to replace it.')} slotProps={{ htmlInput: { autoComplete: 'off' } }} />
+              {(selectedProfile?.has_session_token || editProfile?.has_session_token) && formData.sessionToken === undefined && <Button size="small" sx={{ alignSelf: 'flex-start' }} onClick={() => updateField('sessionToken', '')}>{t('Clear saved token')}</Button>}
+            </>}
+            <PublicUrlFields embedded value={formData.publicUrls} onChange={value => updateField('publicUrls', value)} />
+          </AccordionDetails>
+        </Accordion>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Button
@@ -841,19 +887,11 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
             >
               {t('Test Connection')}
             </Button>
-            
-            {testResult && (
-              <Chip 
-                label={testResult.success ? t('Connection OK') : t('Failed')}
-                color={testResult.success ? "success" : "error"}
-                size="small"
-                sx={{ fontWeight: 600, borderRadius: 1 }}
-              />
-            )}
+
           </Box>
           
           {error && (
-            <Alert severity="error" variant="filled" sx={{ borderRadius: 1, fontWeight: 600 }}>{error}</Alert>
+            <Alert severity="error" variant="filled" sx={{ borderRadius: 1, fontWeight: 600 }}>{t(error)}</Alert>
           )}
           {testResult && <Alert severity={testResult.success ? 'success' : 'warning'} sx={{ borderRadius: 1 }}>{t(testResult.message)}</Alert>}
         </Box>

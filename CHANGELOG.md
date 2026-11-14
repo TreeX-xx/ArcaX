@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-11-14
+
+### Added
+- Connection presets for Tencent COS, Alibaba OSS S3 endpoints and Huawei OBS, with regional virtual-hosted addressing shared by browsing, transfers and generated links.
+- Optional session tokens use the existing secret storage and can be retained, replaced or explicitly cleared. Configuration paste accepts COS, OSS, OBS and standard S3 credential aliases.
+
+### Changed
+- Custom S3 connections have one provider selector and one collapsed Advanced settings section. Connection tests use a single result and discard it when settings change.
+- Huawei OBS requests use HTTPS with unsigned payloads for V4 compatibility; optional SDK checksums remain disabled for custom endpoints.
+- Local request and regression tests cover these rules. Real-account operations, multipart transfers and provider-specific ACL/policy/version support still require cloud acceptance; this build does not certify those capabilities.
+
 ## [0.0.6] - 2026-11-14
 
 ### Added

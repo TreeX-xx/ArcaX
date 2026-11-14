@@ -2,7 +2,7 @@ pub mod keychain;
 pub mod manager;
 
 pub use keychain::KeychainStorage;
-pub use manager::{AddressingStyle, CredentialType, Profile, ProfileManager};
+pub use manager::{AddressingStyle, CredentialType, Profile, ProfileManager, StorageProvider};
 
 use crate::error::Result;
 use std::path::PathBuf;

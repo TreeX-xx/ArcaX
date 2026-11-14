@@ -5,6 +5,27 @@
  * Placeholders use `{name}` and must be preserved exactly.
  */
 export const ZH_MESSAGES: Record<string, string> = {
+  "Secret ID": "SecretId",
+  "Secret Key": "SecretKey",
+  "Storage provider": "存储厂商",
+  "Auto / Other S3": "自动 / 其他 S3",
+  "Tencent COS": "腾讯云 COS",
+  "Alibaba OSS": "阿里云 OSS",
+  "Huawei OBS": "华为云 OBS",
+  "Paste connection configuration": "粘贴连接配置",
+  "Paste YAML or env fields to fill this form. The pasted text is cleared immediately.": "粘贴 YAML 或环境变量配置以填写表单，粘贴原文会立即清空。",
+  "Invalid connection configuration. Include an endpoint, access key and secret key.": "无法识别连接配置，请提供端点、访问密钥和私有密钥。",
+  "Region is read from the endpoint. Auto uses virtual-hosted addressing.": "地域由端点自动确定；自动模式使用虚拟主机寻址。",
+  "Advanced settings": "高级设置",
+  "Session token (optional)": "临时令牌（可选）",
+  "Leave blank to keep a saved token. Enter a new token to replace it.": "留空保留已保存的令牌，输入新令牌可替换。",
+  "Clear saved token": "清除已保存的令牌",
+  "Invalid credentials: The saved session token could not be read. Enter it again or clear it.": "无法读取已保存的临时令牌，请重新输入或清除。",
+  "Configuration error: The endpoint does not match the selected storage provider.": "端点与所选存储厂商不符，请检查配置。",
+  "Configuration error: Huawei OBS connections require HTTPS.": "华为云 OBS 连接需要使用 HTTPS。",
+  "The temporary credentials are invalid or expired. Update the access keys and session token.": "临时凭证无效或已过期，请更新密钥和临时令牌。",
+  "S3 authentication is not enabled for this OSS account. Contact Alibaba Cloud support.": "此 OSS 账号未开启 S3 认证，请联系阿里云技术支持。",
+
   "Paste OBS configuration": "粘贴 OBS 配置",
   "Paste OBS_* YAML or env fields to fill this form. The pasted text is cleared immediately.": "在此粘贴 OBS_* 格式的 YAML 或环境变量配置，自动填写下方表单。粘贴原文会立即清空。",
   "Invalid OBS configuration. Paste the OBS endpoint, access key, secret key and optional bucket fields.": "无法识别 OBS 配置。请粘贴端点、访问密钥、私有密钥及可选的存储桶字段。",
