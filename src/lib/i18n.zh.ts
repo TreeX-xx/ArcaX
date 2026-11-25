@@ -303,6 +303,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Expiry cannot exceed 7 days (604800 seconds) for most AWS credential types": "对于大多数 AWS 凭证类型，过期时间不能超过 7 天（604800 秒）",
   "Expiry time must be greater than 0": "过期时间必须大于 0",
   "Explore": "浏览",
+  "Explorer": "浏览",
   "Failed": "失败",
   "Failed ({count})": "失败（{count}）",
   "Failed Requests": "失败请求",

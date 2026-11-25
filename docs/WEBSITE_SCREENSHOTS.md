@@ -29,11 +29,11 @@ Suggested website order:
 
 ## README screenshots
 
-The screenshots used by `README.md` live in `docs/screenshots/`. They are generated from the static build against the same mocked desktop backend the smoke tests use:
+The English README uses the light-mode screenshots in `docs/screenshots/`. The Chinese README uses the Simplified Chinese captures in `docs/screenshots/zh-CN/`. The capture script uses the static build and a mocked desktop backend.
 
 ```bash
 pnpm build
 pnpm screenshots:readme
 ```
 
-The capture script is `scripts/capture-readme-screenshots.mjs`. It writes `all-buckets.png`, `object-browser.png`, `uploads.png` and `settings.png` at 2880 x 1800.
+The capture script is `scripts/capture-readme-screenshots.mjs`. For each language it writes `all-buckets.png`, `object-browser.png`, `uploads.png` and `settings.png` at 2880 × 1800. It also writes `s3-providers.png`, cropped to the connection dialog with the storage provider menu open.

@@ -53,6 +53,8 @@ import { invalidateBucketCache } from '@/hooks/useBuckets';
 import { useI18n } from '@/lib/i18n';
 import { endpointInfo, providerEndpoint, parseConnectionConfig, type StorageProvider } from '@/lib/s3Endpoint';
 
+const providerLabels = { cos: 'Tencent COS', oss: 'Alibaba OSS', obs: 'Huawei OBS' } as const;
+
 const AWS_REGIONS = [
   'auto',
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -778,9 +780,14 @@ export default function ProfileDialog({ open, onClose, editProfile }: ProfileDia
                       });
                     }}>
                       <MenuItem value="auto">{t('Auto / Other S3')}</MenuItem>
-                      <MenuItem value="cos">{t('Tencent COS')}</MenuItem>
-                      <MenuItem value="oss">{t('Alibaba OSS')}</MenuItem>
-                      <MenuItem value="obs">{t('Huawei OBS')}</MenuItem>
+                      {Object.entries(providerLabels).map(([value, label]) => (
+                        <MenuItem key={value} value={value}>
+                          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, verticalAlign: 'middle' }}>
+                            <Box component="img" src={`/providers/${value}.svg`} alt="" width={20} height={20} />
+                            {t(label)}
+                          </Box>
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
                   <TextField

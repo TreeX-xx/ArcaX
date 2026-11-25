@@ -5,17 +5,33 @@
 //   pnpm build
 //   node scripts/capture-readme-screenshots.mjs
 //
-// Output: docs/screenshots/*.png
+// Output: docs/screenshots/*.png and docs/screenshots/zh-CN/*.png
 
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { mkdir, access } from 'node:fs/promises';
+import { access, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
 const outDir = path.join(root, 'docs', 'screenshots');
 const port = Number(process.env.SCREENSHOT_PORT || 4179);
 const baseUrl = `http://127.0.0.1:${port}`;
+const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+
+const locales = [
+  {
+    locale: 'en-US', language: 'en', directory: outDir,
+    allBuckets: 'All Buckets', settings: 'Settings', explorer: 'Explorer', activeProfile: 'Active profile',
+    profileName: 'Media archive',
+    storageProvider: 'Storage provider', providers: ['Tencent COS', 'Alibaba OSS', 'Huawei OBS'],
+  },
+  {
+    locale: 'zh-CN', language: 'zh', directory: path.join(outDir, 'zh-CN'),
+    allBuckets: '所有存储桶', settings: '设置', explorer: '浏览', activeProfile: '当前配置',
+    profileName: '媒体归档',
+    storageProvider: '存储厂商', providers: ['腾讯云 COS', '阿里云 OSS', '华为云 OBS'],
+  },
+];
 
 try {
   await access(path.join(root, 'out', 'index.html'));
@@ -23,8 +39,6 @@ try {
   console.error('Missing out/index.html. Run `pnpm build` first.');
   process.exit(1);
 }
-
-await mkdir(outDir, { recursive: true });
 
 const server = spawn(process.execPath, ['tests/smoke/server.mjs'], {
   cwd: root,
@@ -45,10 +59,24 @@ async function waitForServer() {
   throw new Error('Static server did not start');
 }
 
-function mockTauri() {
+function mockTauri({ locale, profileName, version }) {
   const profiles = [
     { id: 'production', name: 'Production S3', credential_type: { type: 'Environment' }, region: 'us-east-1', is_default: true },
     { id: 'r2', name: 'Cloudflare R2', credential_type: { type: 'AccessKey' }, region: 'auto', is_default: false },
+    {
+      id: 'cos',
+      name: profileName,
+      credential_type: {
+        type: 'CustomEndpoint',
+        endpoint_url: 'https://cos.ap-guangzhou.myqcloud.com',
+        access_key_id: '',
+        secret_access_key: '',
+      },
+      provider: 'cos',
+      region: 'ap-guangzhou',
+      default_bucket: 'media-archive-1250000000',
+      is_default: false,
+    },
   ];
   const buckets = [
     { name: 'media-production', region: 'us-east-1', creation_date: '2025-11-04T09:12:00Z', object_count: 1284, total_size: 734003200, total_size_formatted: '700.0 MB' },
@@ -81,7 +109,7 @@ function mockTauri() {
   let nextId = 0;
   const invoke = (command, args = {}) => {
     switch (command) {
-      case 'plugin:app|version': return '0.0.2';
+      case 'plugin:app|version': return version;
       case 'plugin:event|listen': return args.handler;
       case 'plugin:event|unlisten': callbacks.delete(Number(args.eventId)); return null;
       case 'plugin:event|emit': return null;
@@ -94,7 +122,7 @@ function mockTauri() {
       case 'plugin:window|close': return null;
       case 'plugin:dialog|save': return '/virtual/downloads/object.bin';
       case 'plugin:dialog|open': return args.options?.directory ? '/virtual/downloads' : ['/virtual/upload.bin'];
-      case 'plugin:os|locale': return 'en-US';
+      case 'plugin:os|locale': return locale;
       case 'get_log_file_info': return { log_file_path: '/virtual/logs/arcax.log', log_dir_path: '/virtual/logs', panic_log_path: '/virtual/logs/panic.log', panic_log_exists: false };
       case 'list_profiles': return profiles;
       case 'get_profile': return profiles.find(profile => profile.id === args.id) ?? null;
@@ -142,35 +170,79 @@ function mockTauri() {
   });
 }
 
-await waitForServer();
+async function captureLocale(browser, labels) {
+  const { directory, locale, language, profileName } = labels;
+  await mkdir(directory, { recursive: true });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 2,
+    colorScheme: 'light',
+    locale,
+  });
+  try {
+    await context.addInitScript(mockTauri, { locale, profileName, version });
+    await context.addInitScript(language => {
+      localStorage.setItem('arcax-app-v2', JSON.stringify({ state: { themeMode: 'light' }, version: 0 }));
+      localStorage.setItem('arcax-settings', JSON.stringify({ state: { language }, version: 1 }));
+    }, language);
+    await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
 
-const browser = await chromium.launch();
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 900 },
-  deviceScaleFactor: 2,
-  colorScheme: 'dark',
-  locale: 'en-US',
-});
-await context.addInitScript(mockTauri);
-await context.route('https://fonts.googleapis.com/**', route => route.fulfill({ contentType: 'text/css', body: '' }));
+    const page = await context.newPage();
+    page.on('pageerror', error => console.error('page error:', error.message));
 
-const page = await context.newPage();
-page.on('pageerror', error => console.error('page error:', error.message));
+    async function save(file, clip) {
+      const html = page.locator('html');
+      await expect(html).toHaveAttribute('lang', language === 'zh' ? locale : language);
+      await expect(html).toHaveCSS('color-scheme', 'light');
+      // Keep the portaled provider menu, but omit the dimmed page behind the rounded dialog.
+      const style = clip ? `
+        html, body { background: transparent !important; }
+        body * { visibility: hidden !important; }
+        [role="dialog"], [role="dialog"] *, .MuiMenu-paper, .MuiMenu-paper * { visibility: visible !important; }
+        [role="dialog"] { box-shadow: none !important; }
+      ` : undefined;
+      await page.screenshot({ path: path.join(directory, file), clip, style, omitBackground: !!clip, animations: 'disabled' });
+      console.log(`captured ${locale} ${file}`);
+    }
 
-async function capture(route, file, expectedText) {
-  await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
-  await page.getByText(expectedText, { exact: false }).first().waitFor({ state: 'visible', timeout: 15000 });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(outDir, file) });
-  console.log(`captured ${file}`);
+    async function capture(route, file, expectedText) {
+      await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
+      await page.getByText(expectedText, { exact: true }).first().waitFor({ state: 'visible', timeout: 15000 });
+      await expect(page.getByRole('tab', { name: labels.explorer, exact: true })).toBeVisible();
+      await save(file);
+    }
+
+    await capture('/?view=discovery', 'all-buckets.png', labels.allBuckets);
+    await capture('/bucket?name=media-production&region=us-east-1', 'object-browser.png', 'hero-banner.png');
+    await capture('/uploads', 'uploads.png', 'hero-banner.png');
+    await capture('/settings', 'settings.png', labels.settings);
+
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await page.getByRole('combobox', { name: labels.activeProfile }).click();
+    await page.getByRole('option').filter({ hasText: profileName }).getByRole('button').click();
+    const dialog = page.getByRole('dialog');
+    const provider = dialog.getByRole('combobox', { name: labels.storageProvider });
+    await expect(provider).toHaveText(labels.providers[0]);
+    const clip = await dialog.boundingBox();
+    if (!clip) throw new Error('The connection dialog is not visible');
+    await provider.click();
+    for (const name of labels.providers) {
+      await expect(page.getByRole('option', { name, exact: true })).toBeVisible();
+    }
+    await save('s3-providers.png', clip);
+  } finally {
+    await context.close();
+  }
 }
 
 try {
-  await capture('/?view=discovery', 'all-buckets.png', 'media-production');
-  await capture('/bucket?name=media-production&region=us-east-1', 'object-browser.png', 'hero-banner.png');
-  await capture('/uploads', 'uploads.png', 'hero-banner.png');
-  await capture('/settings', 'settings.png', 'Settings');
+  await waitForServer();
+  const browser = await chromium.launch();
+  try {
+    for (const labels of locales) await captureLocale(browser, labels);
+  } finally {
+    await browser.close();
+  }
 } finally {
-  await browser.close();
   server.kill();
 }
